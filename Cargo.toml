@@ -111,8 +111,3 @@ debug = true
 [workspace.dependencies.criterion]
 version = "0.5"
 features = ["html_reports"]
-
-[[bench]]
-name = "benchmarks"
-harness = false
-path = "benches/benchmarks.rs"
