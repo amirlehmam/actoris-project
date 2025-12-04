@@ -1,0 +1,9 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile.praxis"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3

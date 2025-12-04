@@ -1,0 +1,415 @@
+syntax = "proto3";
+
+package actoris.praxis.v1;
+
+import "google/protobuf/timestamp.proto";
+import "actoris/common/v1/types.proto";
+
+option go_package = "github.com/actoris/actoris/gen/go/actoris/praxis/v1;praxisv1";
+
+// PRAXIS - Procedural Recall for Agents with eXperiences Indexed by State
+//
+// This service provides procedural memory storage and retrieval for AI agents,
+// enabling them to learn from past experiences in real-time.
+service PraxisService {
+  // Store a new procedural memory
+  rpc StoreMemory(StoreMemoryRequest) returns (StoreMemoryResponse);
+
+  // Retrieve relevant memories for action selection
+  rpc RetrieveMemories(RetrieveMemoriesRequest) returns (RetrieveMemoriesResponse);
+
+  // Get a specific memory by ID
+  rpc GetMemory(GetMemoryRequest) returns (GetMemoryResponse);
+
+  // Update a memory (e.g., record retrieval)
+  rpc UpdateMemory(UpdateMemoryRequest) returns (UpdateMemoryResponse);
+
+  // Delete a memory
+  rpc DeleteMemory(DeleteMemoryRequest) returns (DeleteMemoryResponse);
+
+  // Get agent's procedural competence metrics
+  rpc GetProceduralCompetence(GetProceduralCompetenceRequest) returns (GetProceduralCompetenceResponse);
+
+  // Get learning metrics over time
+  rpc GetLearningMetrics(GetLearningMetricsRequest) returns (GetLearningMetricsResponse);
+
+  // Stream memory updates for an agent
+  rpc StreamMemoryUpdates(StreamMemoryUpdatesRequest) returns (stream MemoryUpdate);
+
+  // Batch import memories (for human demonstrations)
+  rpc ImportDemonstrations(ImportDemonstrationsRequest) returns (ImportDemonstrationsResponse);
+
+  // Get action augmentation for current state
+  rpc GetActionAugmentation(GetActionAugmentationRequest) returns (GetActionAugmentationResponse);
+
+  // Get store statistics
+  rpc GetStoreStats(GetStoreStatsRequest) returns (GetStoreStatsResponse);
+}
+
+// Environment state before or after an action
+message EnvironmentState {
+  // Compressed textual representation (e.g., DOM structure)
+  string textual_repr = 1;
+
+  // Visual feature hash for coarse matching (32 bytes)
+  optional bytes visual_hash = 2;
+
+  // Key-value state features for IoU matching
+  map<string, string> state_features = 3;
+
+  // Element IDs present in the state
+  repeated string element_ids = 4;
+
+  // When this state was captured
+  google.protobuf.Timestamp captured_at = 5;
+
+  // Optional precomputed embedding
+  repeated float embedding = 6;
+}
+
+// Agent's internal state (goal/directive)
+message InternalState {
+  // High-level goal/directive
+  string directive = 1;
+
+  // Current sub-task
+  optional string sub_task = 2;
+
+  // Progress indicator (0.0-1.0)
+  float progress = 3;
+
+  // Task tags for categorization
+  repeated string task_tags = 4;
+
+  // Optional precomputed embedding
+  repeated float embedding = 5;
+
+  // Additional context key-value pairs
+  map<string, string> context = 6;
+}
+
+// Action taken by the agent
+message AgentAction {
+  // Type of action (click, type, navigate, etc.)
+  string action_type = 1;
+
+  // Target element or location
+  optional string target = 2;
+
+  // Action parameters (JSON-encoded values)
+  map<string, string> parameters = 3;
+
+  // Raw action string for display
+  string raw_action = 4;
+}
+
+// Outcome of an action
+message ActionOutcome {
+  // Outcome type
+  oneof outcome {
+    SuccessOutcome success = 1;
+    FailureOutcome failure = 2;
+    PartialOutcome partial = 3;
+  }
+}
+
+message SuccessOutcome {
+  string description = 1;
+}
+
+message FailureOutcome {
+  string error_code = 1;
+  string description = 2;
+  bool recoverable = 3;
+}
+
+message PartialOutcome {
+  float completion_pct = 1;
+  string description = 2;
+}
+
+// Source of a memory
+enum MemorySource {
+  MEMORY_SOURCE_UNSPECIFIED = 0;
+  MEMORY_SOURCE_AGENT_EXPERIENCE = 1;
+  MEMORY_SOURCE_HUMAN_DEMONSTRATION = 2;
+  MEMORY_SOURCE_AGENT_TRANSFER = 3;
+  MEMORY_SOURCE_SYNTHETIC = 4;
+}
+
+// A complete procedural memory entry
+message PraxisMemory {
+  // Unique memory ID
+  string id = 1;
+
+  // Agent that created this memory
+  string agent_id = 2;
+
+  // Environmental state BEFORE the action
+  EnvironmentState env_state_pre = 3;
+
+  // Agent's internal state
+  InternalState internal_state = 4;
+
+  // Action taken
+  AgentAction action = 5;
+
+  // Environmental state AFTER the action
+  EnvironmentState env_state_post = 6;
+
+  // Outcome of the action
+  ActionOutcome outcome = 7;
+
+  // When this memory was created
+  google.protobuf.Timestamp created_at = 8;
+
+  // Number of times retrieved
+  uint64 retrieval_count = 9;
+
+  // Last retrieval time
+  optional google.protobuf.Timestamp last_retrieved = 10;
+
+  // Reinforcement score
+  float reinforcement_score = 11;
+
+  // Source of the memory
+  MemorySource source = 12;
+
+  // Link to OutcomeRecord in TrustLedger
+  optional string outcome_record_id = 13;
+}
+
+// Retrieved memory with relevance scores
+message RetrievedMemory {
+  // The memory
+  PraxisMemory memory = 1;
+
+  // Environmental similarity score
+  float env_similarity = 2;
+
+  // Internal state similarity score
+  float internal_similarity = 3;
+
+  // Combined relevance score
+  float relevance_score = 4;
+
+  // Rank in results (1 = most relevant)
+  uint32 rank = 5;
+}
+
+// Store memory request
+message StoreMemoryRequest {
+  string agent_id = 1;
+  EnvironmentState env_state_pre = 2;
+  InternalState internal_state = 3;
+  AgentAction action = 4;
+  EnvironmentState env_state_post = 5;
+  ActionOutcome outcome = 6;
+  MemorySource source = 7;
+  optional string outcome_record_id = 8;
+}
+
+message StoreMemoryResponse {
+  string memory_id = 1;
+  google.protobuf.Timestamp created_at = 2;
+}
+
+// Retrieve memories request
+message RetrieveMemoriesRequest {
+  string agent_id = 1;
+  EnvironmentState current_env = 2;
+  InternalState current_internal = 3;
+
+  // Maximum results to return (default: 10)
+  optional uint32 max_results = 4;
+
+  // Similarity threshold (default: 0.3)
+  optional float similarity_threshold = 5;
+
+  // Include cross-agent memories
+  optional bool include_global = 6;
+
+  // Only return successful memories
+  optional bool successful_only = 7;
+}
+
+message RetrieveMemoriesResponse {
+  repeated RetrievedMemory memories = 1;
+  uint32 total_searched = 2;
+  float search_time_ms = 3;
+}
+
+// Get memory request
+message GetMemoryRequest {
+  string memory_id = 1;
+}
+
+message GetMemoryResponse {
+  PraxisMemory memory = 1;
+}
+
+// Update memory request
+message UpdateMemoryRequest {
+  string memory_id = 1;
+
+  // Record a retrieval
+  optional bool record_retrieval = 2;
+
+  // Update reinforcement score
+  optional float reinforcement_delta = 3;
+}
+
+message UpdateMemoryResponse {
+  PraxisMemory memory = 1;
+}
+
+// Delete memory request
+message DeleteMemoryRequest {
+  string memory_id = 1;
+}
+
+message DeleteMemoryResponse {
+  bool deleted = 1;
+}
+
+// Procedural competence metrics
+message ProceduralCompetence {
+  uint64 total_memories = 1;
+  uint64 successful_memories = 2;
+  float success_rate = 3;
+  float diversity_score = 4;
+  float generalization_score = 5;
+  float learning_velocity = 6;
+  float retrieval_accuracy = 7;
+  float memory_utilization = 8;
+  float fitness_multiplier = 9;
+  google.protobuf.Timestamp calculated_at = 10;
+}
+
+message GetProceduralCompetenceRequest {
+  string agent_id = 1;
+}
+
+message GetProceduralCompetenceResponse {
+  ProceduralCompetence competence = 1;
+}
+
+// Learning metrics
+message LearningMetrics {
+  string agent_id = 1;
+  ProceduralCompetence current = 2;
+  repeated CompetenceSnapshot history = 3;
+  int32 trend = 4;  // -1, 0, 1
+  uint32 days_since_improvement = 5;
+  bool is_actively_learning = 6;
+  bool should_protect_for_learning = 7;
+}
+
+message CompetenceSnapshot {
+  google.protobuf.Timestamp timestamp = 1;
+  float success_rate = 2;
+  uint64 total_memories = 3;
+  float fitness_multiplier = 4;
+}
+
+message GetLearningMetricsRequest {
+  string agent_id = 1;
+}
+
+message GetLearningMetricsResponse {
+  LearningMetrics metrics = 1;
+}
+
+// Stream memory updates
+message StreamMemoryUpdatesRequest {
+  string agent_id = 1;
+}
+
+message MemoryUpdate {
+  string memory_id = 1;
+  string agent_id = 2;
+  MemoryUpdateType update_type = 3;
+  optional PraxisMemory memory = 4;
+  google.protobuf.Timestamp timestamp = 5;
+}
+
+enum MemoryUpdateType {
+  MEMORY_UPDATE_TYPE_UNSPECIFIED = 0;
+  MEMORY_UPDATE_TYPE_CREATED = 1;
+  MEMORY_UPDATE_TYPE_RETRIEVED = 2;
+  MEMORY_UPDATE_TYPE_DELETED = 3;
+  MEMORY_UPDATE_TYPE_REINFORCED = 4;
+}
+
+// Import demonstrations
+message ImportDemonstrationsRequest {
+  string agent_id = 1;
+  repeated DemonstrationEntry demonstrations = 2;
+  string demonstrator_id = 3;
+}
+
+message DemonstrationEntry {
+  EnvironmentState env_state_pre = 1;
+  InternalState internal_state = 2;
+  AgentAction action = 3;
+  EnvironmentState env_state_post = 4;
+  ActionOutcome outcome = 5;
+}
+
+message ImportDemonstrationsResponse {
+  uint32 imported_count = 1;
+  repeated string memory_ids = 2;
+  repeated string failed_reasons = 3;
+}
+
+// Action augmentation
+message ActionAugmentation {
+  repeated AugmentedMemory memories = 1;
+  optional SuggestedAction suggested_action = 2;
+  float confidence = 3;
+  optional string warning = 4;
+  string context_string = 5;
+}
+
+message AugmentedMemory {
+  uint32 rank = 1;
+  float relevance = 2;
+  string action = 3;
+  bool was_successful = 4;
+  string outcome_summary = 5;
+  string directive = 6;
+  uint64 usage_count = 7;
+}
+
+message SuggestedAction {
+  string action = 1;
+  string reasoning = 2;
+  repeated uint32 supporting_memories = 3;
+  float confidence = 4;
+}
+
+message GetActionAugmentationRequest {
+  string agent_id = 1;
+  EnvironmentState current_env = 2;
+  InternalState current_internal = 3;
+  optional uint32 max_memories = 4;
+}
+
+message GetActionAugmentationResponse {
+  ActionAugmentation augmentation = 1;
+}
+
+// Store statistics
+message StoreStats {
+  uint64 total_memories = 1;
+  uint32 unique_agents = 2;
+  float avg_memories_per_agent = 3;
+  uint64 max_memories_per_agent = 4;
+  uint64 successful_memories = 5;
+}
+
+message GetStoreStatsRequest {}
+
+message GetStoreStatsResponse {
+  StoreStats stats = 1;
+}

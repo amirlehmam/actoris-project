@@ -237,3 +237,60 @@ When ready to scale:
 1. **Railway Pro**: $20/month for more resources
 2. **Neo4j Aura Pro**: $65/month for production
 3. **Dedicated K8s**: Use Helm charts in `deploy/helm/`
+
+---
+
+## PRAXIS Service Deployment
+
+### Quick Deploy to Railway + Vercel
+
+#### Step 1: Deploy PRAXIS Backend to Railway
+
+1. Click **"New Project"** → **"Deploy from GitHub repo"**
+2. Select your repository
+3. Railway will auto-detect `railway.toml` and use `Dockerfile.praxis`
+4. Add environment variables:
+   ```
+   PRAXIS_HOST=0.0.0.0
+   PRAXIS_PORT=8084
+   RUST_LOG=info
+   ```
+5. Click **Deploy**
+
+> First build takes ~5-10 minutes (Rust compilation).
+
+#### Step 2: Deploy Frontend to Vercel
+
+1. Import your repository on Vercel
+2. Set **Root Directory**: `ui`
+3. Add environment variable:
+   ```
+   NEXT_PUBLIC_API_URL=https://your-railway-url.up.railway.app
+   ```
+4. Deploy
+
+### PRAXIS API Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /health` | Health check |
+| `GET /api/v1/stats` | Memory store statistics |
+| `GET /api/v1/agents/:id/memories` | Agent's procedural memories |
+| `GET /api/v1/agents/:id/competence` | Agent's competence metrics |
+| `GET /api/v1/version` | Service version |
+
+### Local Development
+
+```bash
+# Run PRAXIS backend
+cd crates/actoris-praxis
+cargo run
+
+# Run frontend
+cd ui
+npm install
+npm run dev
+```
+
+Backend: http://localhost:8084
+Frontend: http://localhost:3000

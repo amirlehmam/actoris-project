@@ -6,6 +6,7 @@ members = [
     "crates/actoris-darwinian",
     "crates/actoris-sidecar",
     "crates/actoris-protocol-dna",
+    "crates/actoris-praxis",
 ]
 resolver = "2"
 
@@ -86,6 +87,11 @@ actoris-onebill = { path = "crates/actoris-onebill" }
 actoris-darwinian = { path = "crates/actoris-darwinian" }
 actoris-sidecar = { path = "crates/actoris-sidecar" }
 actoris-protocol-dna = { path = "crates/actoris-protocol-dna" }
+actoris-praxis = { path = "crates/actoris-praxis" }
+
+# Additional dependencies for PRAXIS
+dotenvy = "0.15"
+ordered-float = "4.2"
 
 [profile.release]
 lto = "thin"
