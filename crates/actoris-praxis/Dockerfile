@@ -1,5 +1,5 @@
 # Build stage - use Debian for easier compilation
-FROM rust:1.75-slim-bookworm AS builder
+FROM rust:1.83-slim-bookworm AS builder
 
 WORKDIR /app
 
