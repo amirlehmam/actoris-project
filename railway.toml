@@ -1,6 +1,6 @@
 [build]
 builder = "dockerfile"
-dockerfilePath = "Dockerfile.praxis"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 healthcheckPath = "/health"
