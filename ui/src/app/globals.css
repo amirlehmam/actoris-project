@@ -1,0 +1,60 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 249, 250, 251;
+  --background-end-rgb: 255, 255, 255;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+    to bottom,
+    rgb(var(--background-start-rgb)),
+    rgb(var(--background-end-rgb))
+  );
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Trust score animations */
+.trust-glow-low {
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+}
+
+.trust-glow-medium {
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
+}
+
+.trust-glow-high {
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
+}
+
+.trust-glow-max {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+}

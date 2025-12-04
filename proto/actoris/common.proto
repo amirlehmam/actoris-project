@@ -1,0 +1,191 @@
+syntax = "proto3";
+
+package actoris.common.v1;
+
+option go_package = "github.com/actoris/actoris/gen/go/actoris/common/v1;commonv1";
+
+// EntityType classification for UnifiedID
+enum EntityType {
+  ENTITY_TYPE_UNSPECIFIED = 0;
+  ENTITY_TYPE_HUMAN = 1;
+  ENTITY_TYPE_AGENT = 2;
+  ENTITY_TYPE_ORGANIZATION = 3;
+}
+
+// W3C DID-based unified identity
+message UnifiedID {
+  // W3C DID string (did:key:... or did:web:...)
+  string did = 1;
+  // Entity classification
+  EntityType entity_type = 2;
+  // Parent DID for spawned agents
+  optional string parent_did = 3;
+  // Creation timestamp (Unix milliseconds)
+  int64 created_at = 4;
+  // Ed25519 public key (32 bytes)
+  bytes public_key = 5;
+}
+
+// Trust score breakdown by component
+message TrustComponents {
+  // Outcome verification success rate (0-400 points)
+  uint32 verification_score = 1;
+  // Dispute history penalty (0-200 points deducted)
+  uint32 dispute_penalty = 2;
+  // SLA compliance score (0-200 points)
+  uint32 sla_score = 3;
+  // Network reputation (0-200 points)
+  uint32 network_score = 4;
+}
+
+// Entity trust score with full breakdown
+message TrustScore {
+  // Composite score from 0-1000
+  uint32 score = 1;
+  // Component breakdown
+  TrustComponents components = 2;
+  // Last update timestamp
+  int64 updated_at = 3;
+  // Total number of verified outcomes
+  uint64 verified_outcomes = 4;
+  // Historical dispute rate (0.0 - 1.0)
+  double dispute_rate = 5;
+  // Score version for optimistic concurrency
+  uint64 version = 6;
+}
+
+// HC Wallet for compute credit management
+message HcWallet {
+  // Owner's UnifiedID DID
+  string owner_did = 1;
+  // Available balance (PFLOP-hours as string for precision)
+  string available = 2;
+  // Locked balance (in escrow)
+  string locked = 3;
+  // Expiration timestamp (Unix milliseconds)
+  int64 expires_at = 4;
+  // Version for optimistic concurrency
+  uint64 version = 5;
+  // Timestamp of last modification
+  int64 updated_at = 6;
+}
+
+// Task complexity levels
+enum TaskComplexity {
+  TASK_COMPLEXITY_UNSPECIFIED = 0;
+  TASK_COMPLEXITY_LOW = 1;
+  TASK_COMPLEXITY_MEDIUM = 2;
+  TASK_COMPLEXITY_HIGH = 3;
+  TASK_COMPLEXITY_CRITICAL = 4;
+}
+
+// Data sensitivity levels
+enum DataSensitivity {
+  DATA_SENSITIVITY_UNSPECIFIED = 0;
+  DATA_SENSITIVITY_PUBLIC = 1;
+  DATA_SENSITIVITY_INTERNAL = 2;
+  DATA_SENSITIVITY_CONFIDENTIAL = 3;
+  DATA_SENSITIVITY_RESTRICTED = 4;
+}
+
+// FROST threshold signature
+message FrostSignature {
+  // Aggregated Schnorr signature (64 bytes)
+  bytes signature = 1;
+  // DIDs of participating oracles
+  repeated string signers = 2;
+  // Group public key for verification
+  bytes group_key = 3;
+  // Threshold requirement
+  uint32 threshold = 4;
+  // Total oracle count
+  uint32 total_oracles = 5;
+}
+
+// Individual oracle vote
+message OracleVote {
+  // Oracle's DID
+  string oracle_did = 1;
+  // Vote (true = approve, false = reject)
+  bool approved = 2;
+  // Optional rejection reason
+  optional string reason = 3;
+  // Vote timestamp
+  int64 timestamp = 4;
+}
+
+// Verification result
+message VerificationResult {
+  // Whether the action passed verification
+  bool passed = 1;
+  // Number of oracles that participated
+  uint32 oracle_count = 2;
+  // Whether quorum was reached
+  bool quorum_reached = 3;
+  // Verification latency in milliseconds
+  uint32 latency_ms = 4;
+  // Individual oracle votes
+  repeated OracleVote votes = 5;
+  // Reason if verification failed
+  optional string failure_reason = 6;
+}
+
+// Verified action record
+message OutcomeRecord {
+  // Unique record ID (UUID)
+  string id = 1;
+  // Actor's DID
+  string actor_did = 2;
+  // Client's DID
+  string client_did = 3;
+  // Action type identifier
+  string action_type = 4;
+  // BLAKE3 hash of input (32 bytes)
+  bytes input_hash = 5;
+  // BLAKE3 hash of output (32 bytes)
+  bytes output_hash = 6;
+  // Compute consumed (PFLOP-hours as string)
+  string compute_hc = 7;
+  // Verification result
+  VerificationResult verification = 8;
+  // FROST threshold signature
+  FrostSignature signature = 9;
+  // Merkle proof path
+  repeated bytes merkle_proof = 10;
+  // Merkle root at time of inclusion
+  bytes merkle_root = 11;
+  // Leaf index in Merkle tree
+  uint64 merkle_index = 12;
+  // Submission timestamp
+  int64 submitted_at = 13;
+  // Verification completion timestamp
+  int64 verified_at = 14;
+  // EventStoreDB stream position
+  optional uint64 stream_position = 15;
+}
+
+// Error details
+message ErrorInfo {
+  // Error code
+  string code = 1;
+  // Human-readable message
+  string message = 2;
+  // Additional details
+  map<string, string> details = 3;
+}
+
+// Pagination request
+message PageRequest {
+  // Number of items per page
+  uint32 limit = 1;
+  // Cursor for pagination
+  optional string cursor = 2;
+}
+
+// Pagination response
+message PageResponse {
+  // Cursor for next page (empty if no more pages)
+  string next_cursor = 1;
+  // Total count (if available)
+  optional uint64 total_count = 2;
+}

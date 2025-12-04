@@ -1,0 +1,198 @@
+name: Go CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'services/**'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/go-ci.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'services/**'
+      - 'go.mod'
+      - 'go.sum'
+
+env:
+  GO_VERSION: '1.22'
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+          working-directory: services/identity-cloud
+
+      - name: Check formatting
+        run: |
+          cd services/identity-cloud
+          if [ -n "$(gofmt -s -l .)" ]; then
+            echo "Go files are not formatted:"
+            gofmt -s -d .
+            exit 1
+          fi
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: lint
+    services:
+      neo4j:
+        image: neo4j:5
+        ports:
+          - 7474:7474
+          - 7687:7687
+        env:
+          NEO4J_AUTH: neo4j/testpassword
+          NEO4J_PLUGINS: '["apoc"]'
+        options: >-
+          --health-cmd "wget -q --spider http://localhost:7474 || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      nats:
+        image: nats:latest
+        ports:
+          - 4222:4222
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Wait for Neo4j
+        run: |
+          for i in {1..30}; do
+            if curl -s http://localhost:7474 > /dev/null; then
+              echo "Neo4j is ready"
+              break
+            fi
+            echo "Waiting for Neo4j..."
+            sleep 2
+          done
+
+      - name: Run tests
+        run: |
+          cd services/identity-cloud
+          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+        env:
+          NEO4J_URI: bolt://localhost:7687
+          NEO4J_USER: neo4j
+          NEO4J_PASSWORD: testpassword
+          REDIS_URL: redis://localhost:6379
+          NATS_URL: nats://localhost:4222
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: services/identity-cloud/coverage.out
+          flags: go
+          fail_ci_if_error: false
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+      - name: Run security scan
+        run: |
+          cd services/identity-cloud
+          gosec -fmt json -out gosec-report.json ./... || true
+
+      - name: Upload security report
+        uses: actions/upload-artifact@v4
+        with:
+          name: gosec-report
+          path: services/identity-cloud/gosec-report.json
+
+      - name: Run govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          cd services/identity-cloud
+          govulncheck ./...
+        continue-on-error: true
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build binaries
+        run: |
+          cd services/identity-cloud
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o identity-cloud-linux-amd64 ./cmd/server
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o identity-cloud-darwin-amd64 ./cmd/server
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o identity-cloud-darwin-arm64 ./cmd/server
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o identity-cloud-windows-amd64.exe ./cmd/server
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-binaries
+          path: services/identity-cloud/identity-cloud-*
+          retention-days: 7
+
+  proto:
+    name: Proto Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install buf
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          version: latest
+
+      - name: Lint protos
+        run: buf lint proto/
+        continue-on-error: true
+
+      - name: Check breaking changes
+        run: buf breaking proto/ --against '.git#branch=main'
+        continue-on-error: true

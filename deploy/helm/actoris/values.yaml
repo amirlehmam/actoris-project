@@ -1,0 +1,366 @@
+# ACTORIS Helm Chart Values
+# ===========================
+
+# Global settings
+global:
+  imageRegistry: ghcr.io
+  imagePullSecrets: []
+  storageClass: ""
+
+# IdentityCloud (Go service)
+identityCloud:
+  enabled: true
+  replicaCount: 3
+
+  image:
+    repository: actoris/identity-cloud
+    tag: ""  # Defaults to Chart.appVersion
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    grpcPort: 50051
+    httpPort: 8080
+    metricsPort: 9090
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+  config:
+    logLevel: info
+    graceEpochs: 10
+    inheritedTrustPct: 0.30
+    minInheritedTau: 0.10
+    decayFactor: 0.005
+
+  # Neo4j connection
+  neo4j:
+    uri: bolt://neo4j:7687
+    database: actoris
+    existingSecret: ""
+    secretKeys:
+      username: neo4j-username
+      password: neo4j-password
+
+# TrustLedger (Rust service)
+trustLedger:
+  enabled: true
+  replicaCount: 5  # Odd number for BFT consensus
+
+  image:
+    repository: actoris/trustledger
+    tag: ""
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    grpcPort: 50052
+    consensusPort: 9000
+    metricsPort: 9091
+
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
+  # Malachite BFT Configuration
+  consensus:
+    quorumThreshold: 3
+    oracleCount: 5
+    viewTimeout: 2000ms
+    proposalTimeout: 1000ms
+
+  # FROST Configuration
+  frost:
+    threshold: 3
+    totalSigners: 5
+    keyRotationDays: 30
+
+  # EventStoreDB connection
+  eventstore:
+    uri: esdb://eventstore:2113
+    existingSecret: ""
+
+# OneBill (Rust service)
+oneBill:
+  enabled: true
+  replicaCount: 3
+
+  image:
+    repository: actoris/onebill
+    tag: ""
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    grpcPort: 50053
+    metricsPort: 9092
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+  config:
+    hcExpiryDays: 30
+    maxTrustDiscount: 0.20
+    escrowTimeoutMinutes: 60
+    settlementBatchSize: 100
+
+  # QuestDB connection
+  questdb:
+    uri: questdb:9000
+    existingSecret: ""
+
+# Darwinian (Rust service)
+darwinian:
+  enabled: true
+  replicaCount: 2
+
+  image:
+    repository: actoris/darwinian
+    tag: ""
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    grpcPort: 50054
+    metricsPort: 9093
+
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
+  config:
+    targetEfficiency: 1.05
+    cullThreshold: 0.70
+    graceEpochs: 2
+    pidKp: 0.5
+    pidKi: 0.1
+    pidKd: 0.05
+    epochDurationMinutes: 60
+
+# Sidecar Proxy (Rust - deployed as DaemonSet)
+sidecar:
+  enabled: true
+
+  image:
+    repository: actoris/sidecar
+    tag: ""
+    pullPolicy: IfNotPresent
+
+  # Deploy as DaemonSet for node-level metering
+  daemonSet:
+    enabled: true
+
+  service:
+    type: ClusterIP
+    proxyPort: 8888
+    metricsPort: 9094
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  config:
+    enableEbpf: true
+    meteringIntervalMs: 100
+    proxyTimeout: 30s
+
+  # eBPF requires privileged mode on Linux
+  securityContext:
+    privileged: true
+    capabilities:
+      add:
+        - BPF
+        - PERFMON
+        - SYS_ADMIN
+
+# Oracle Nodes (TrustLedger replicas act as oracles)
+oracle:
+  # Uses TrustLedger pods
+  count: 5
+  quorum: 3
+
+# Security Settings
+security:
+  mtls:
+    enabled: true
+    # Use cert-manager for certificate management
+    certManager:
+      enabled: true
+      issuerRef:
+        name: actoris-ca
+        kind: ClusterIssuer
+    # Or provide existing secrets
+    existingSecrets:
+      ca: ""
+      server: ""
+      client: ""
+
+  hsm:
+    enabled: false
+    provider: pkcs11
+    # PKCS#11 configuration
+    pkcs11:
+      libraryPath: /usr/lib/softhsm/libsofthsm2.so
+      slotId: 0
+      existingSecret: hsm-pin
+
+  # Network policies
+  networkPolicies:
+    enabled: true
+
+  # Pod security standards
+  podSecurityStandards:
+    enforce: restricted
+    audit: restricted
+    warn: restricted
+
+# NATS Configuration
+nats:
+  enabled: true
+  cluster:
+    enabled: true
+    replicas: 3
+  jetstream:
+    enabled: true
+    memStorage:
+      enabled: true
+      size: 2Gi
+    fileStorage:
+      enabled: true
+      size: 10Gi
+      storageClassName: ""
+
+# Redis Configuration
+redis:
+  enabled: true
+  architecture: replication
+  auth:
+    enabled: true
+    existingSecret: redis-password
+  replica:
+    replicaCount: 3
+  master:
+    persistence:
+      enabled: true
+      size: 8Gi
+
+# Neo4j Configuration
+neo4j:
+  enabled: true
+  neo4j:
+    edition: enterprise
+    acceptLicenseAgreement: "yes"
+  volumes:
+    data:
+      mode: defaultStorageClass
+      defaultStorageClass:
+        requests:
+          storage: 100Gi
+
+# Monitoring
+monitoring:
+  enabled: true
+
+  prometheus:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      interval: 15s
+
+  grafana:
+    enabled: true
+    adminPassword: ""  # Auto-generated if empty
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+    datasources:
+      enabled: true
+
+  # Alert rules
+  alerting:
+    enabled: true
+    rules:
+      - name: HighVerificationLatency
+        expr: histogram_quantile(0.99, verification_latency_bucket) > 2000
+        for: 5m
+        severity: warning
+      - name: LowQuorumParticipation
+        expr: oracle_votes_total < 3
+        for: 1m
+        severity: critical
+      - name: HighCullingRate
+        expr: rate(agents_culled_total[1h]) > 10
+        for: 15m
+        severity: warning
+
+# Ingress Configuration
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "GRPC"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: api.actoris.io
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: actoris-tls
+      hosts:
+        - api.actoris.io
+
+# Service Account
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+# Node Affinity
+nodeSelector: {}
+
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: actoris
+          topologyKey: kubernetes.io/hostname

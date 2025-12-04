@@ -1,0 +1,169 @@
+{{- if .Values.trustLedger.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "actoris.trustLedger.fullname" . }}
+  labels:
+    {{- include "actoris.labels" . | nindent 4 }}
+    app.kubernetes.io/component: trustledger
+spec:
+  serviceName: {{ include "actoris.trustLedger.fullname" . }}
+  replicas: {{ .Values.trustLedger.replicaCount }}
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      {{- include "actoris.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: trustledger
+  template:
+    metadata:
+      labels:
+        {{- include "actoris.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: trustledger
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{ .Values.trustLedger.service.metricsPort }}"
+    spec:
+      {{- include "actoris.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "actoris.serviceAccountName" . }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: trustledger
+          image: "{{ .Values.global.imageRegistry }}/{{ .Values.trustLedger.image.repository }}:{{ .Values.trustLedger.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.trustLedger.image.pullPolicy }}
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.trustLedger.service.grpcPort }}
+              protocol: TCP
+            - name: consensus
+              containerPort: {{ .Values.trustLedger.service.consensusPort }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.trustLedger.service.metricsPort }}
+              protocol: TCP
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: RUST_LOG
+              value: "info,actoris=debug"
+            - name: GRPC_PORT
+              value: "{{ .Values.trustLedger.service.grpcPort }}"
+            - name: CONSENSUS_PORT
+              value: "{{ .Values.trustLedger.service.consensusPort }}"
+            - name: METRICS_PORT
+              value: "{{ .Values.trustLedger.service.metricsPort }}"
+            - name: QUORUM_THRESHOLD
+              value: "{{ .Values.trustLedger.consensus.quorumThreshold }}"
+            - name: ORACLE_COUNT
+              value: "{{ .Values.trustLedger.consensus.oracleCount }}"
+            - name: VIEW_TIMEOUT
+              value: "{{ .Values.trustLedger.consensus.viewTimeout }}"
+            - name: FROST_THRESHOLD
+              value: "{{ .Values.trustLedger.frost.threshold }}"
+            - name: FROST_SIGNERS
+              value: "{{ .Values.trustLedger.frost.totalSigners }}"
+            - name: EVENTSTORE_URI
+              value: "{{ .Values.trustLedger.eventstore.uri }}"
+            - name: NATS_URL
+              value: "nats://{{ .Release.Name }}-nats:4222"
+            - name: REDIS_URL
+              value: "redis://{{ .Release.Name }}-redis-master:6379"
+            {{- if .Values.security.mtls.enabled }}
+            - name: MTLS_ENABLED
+              value: "true"
+            - name: TLS_CERT_PATH
+              value: "/etc/actoris/tls/tls.crt"
+            - name: TLS_KEY_PATH
+              value: "/etc/actoris/tls/tls.key"
+            - name: TLS_CA_PATH
+              value: "/etc/actoris/tls/ca.crt"
+            {{- end }}
+          livenessProbe:
+            grpc:
+              port: {{ .Values.trustLedger.service.grpcPort }}
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            grpc:
+              port: {{ .Values.trustLedger.service.grpcPort }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.trustLedger.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/actoris
+            {{- if .Values.security.mtls.enabled }}
+            - name: tls
+              mountPath: /etc/actoris/tls
+              readOnly: true
+            {{- end }}
+      volumes:
+        {{- if .Values.security.mtls.enabled }}
+        - name: tls
+          secret:
+            secretName: {{ include "actoris.trustLedger.fullname" . }}-tls
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.global.storageClass }}
+        storageClassName: {{ .Values.global.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "actoris.trustLedger.fullname" . }}
+  labels:
+    {{- include "actoris.labels" . | nindent 4 }}
+    app.kubernetes.io/component: trustledger
+spec:
+  type: {{ .Values.trustLedger.service.type }}
+  clusterIP: None  # Headless for StatefulSet
+  ports:
+    - port: {{ .Values.trustLedger.service.grpcPort }}
+      targetPort: grpc
+      protocol: TCP
+      name: grpc
+    - port: {{ .Values.trustLedger.service.consensusPort }}
+      targetPort: consensus
+      protocol: TCP
+      name: consensus
+    - port: {{ .Values.trustLedger.service.metricsPort }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+  selector:
+    {{- include "actoris.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: trustledger
+{{- end }}

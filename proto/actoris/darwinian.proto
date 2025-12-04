@@ -1,0 +1,302 @@
+syntax = "proto3";
+
+package actoris.darwinian.v1;
+
+import "actoris/common.proto";
+
+option go_package = "github.com/actoris/actoris/gen/go/actoris/darwinian/v1;darwinianv1";
+
+// Darwinian service for resource allocation and fitness-based selection
+service DarwinianService {
+  // Get current fitness for an agent
+  rpc GetFitness(GetFitnessRequest) returns (GetFitnessResponse);
+
+  // Get HC allocation for an agent
+  rpc GetAllocation(GetAllocationRequest) returns (GetAllocationResponse);
+
+  // Submit metrics for fitness calculation
+  rpc SubmitMetrics(SubmitMetricsRequest) returns (SubmitMetricsResponse);
+
+  // Get cohort rankings
+  rpc GetCohortRankings(GetCohortRankingsRequest) returns (GetCohortRankingsResponse);
+
+  // Get epoch summary
+  rpc GetEpochSummary(GetEpochSummaryRequest) returns (GetEpochSummaryResponse);
+
+  // List culled agents
+  rpc ListCulledAgents(ListCulledAgentsRequest) returns (ListCulledAgentsResponse);
+
+  // Request allocation adjustment (manual override)
+  rpc RequestAllocationAdjustment(RequestAllocationAdjustmentRequest) returns (RequestAllocationAdjustmentResponse);
+
+  // Stream allocation changes
+  rpc StreamAllocationChanges(StreamAllocationChangesRequest) returns (stream AllocationChangeEvent);
+
+  // Get system efficiency metrics
+  rpc GetSystemMetrics(GetSystemMetricsRequest) returns (GetSystemMetricsResponse);
+}
+
+// Agent status in Darwinian system
+enum AgentStatus {
+  AGENT_STATUS_UNSPECIFIED = 0;
+  // Active and receiving allocations
+  AGENT_STATUS_ACTIVE = 1;
+  // Below threshold, grace period
+  AGENT_STATUS_WARNING = 2;
+  // Culled due to low fitness
+  AGENT_STATUS_CULLED = 3;
+  // Manually paused
+  AGENT_STATUS_PAUSED = 4;
+  // New agent, bootstrap period
+  AGENT_STATUS_BOOTSTRAPPING = 5;
+}
+
+// GetFitness request
+message GetFitnessRequest {
+  string agent_did = 1;
+}
+
+message GetFitnessResponse {
+  // Agent's DID
+  string agent_did = 1;
+  // Current fitness score (η = τ × (revenue/cost))
+  double fitness = 2;
+  // Fitness components
+  FitnessComponents components = 3;
+  // Agent status
+  AgentStatus status = 4;
+  // Epochs below threshold (for culling tracking)
+  uint32 epochs_below_threshold = 5;
+  // Last calculation timestamp
+  int64 calculated_at = 6;
+}
+
+message FitnessComponents {
+  // Trust score (τ, normalized 0-1)
+  double tau = 1;
+  // Revenue (PFLOP-hours earned)
+  string revenue = 2;
+  // Cost (PFLOP-hours consumed)
+  string cost = 3;
+  // ROI (revenue / cost)
+  double roi = 4;
+}
+
+// GetAllocation request
+message GetAllocationRequest {
+  string agent_did = 1;
+}
+
+message GetAllocationResponse {
+  string agent_did = 1;
+  // Current HC allocation (PFLOP-hours)
+  string allocation = 2;
+  // Previous allocation (for comparison)
+  string previous_allocation = 3;
+  // Allocation change from last epoch
+  double change_percentage = 4;
+  // Current epoch
+  uint64 epoch = 5;
+  // Next epoch timestamp
+  int64 next_epoch_at = 6;
+}
+
+// SubmitMetrics request
+message SubmitMetricsRequest {
+  string agent_did = 1;
+  // Revenue earned this period (PFLOP-hours)
+  string revenue = 2;
+  // Cost consumed this period
+  string cost = 3;
+  // Period timestamps
+  int64 period_start = 4;
+  int64 period_end = 5;
+}
+
+message SubmitMetricsResponse {
+  bool accepted = 1;
+  // Updated fitness (if recalculated)
+  optional double updated_fitness = 2;
+}
+
+// GetCohortRankings request
+message GetCohortRankingsRequest {
+  // Action type to filter by (optional)
+  optional string action_type = 1;
+  // Number of top agents to return
+  uint32 limit = 2;
+  // Include culled agents
+  bool include_culled = 3;
+}
+
+message GetCohortRankingsResponse {
+  // Ranked agents
+  repeated AgentRanking rankings = 1;
+  // Cohort statistics
+  CohortStats stats = 2;
+  // Current epoch
+  uint64 epoch = 3;
+}
+
+message AgentRanking {
+  uint32 rank = 1;
+  string agent_did = 2;
+  double fitness = 3;
+  AgentStatus status = 4;
+  string allocation = 5;
+  // Action type specialization
+  optional string primary_action_type = 6;
+}
+
+message CohortStats {
+  // Number of active agents
+  uint64 active_agents = 1;
+  // Number of culled agents this epoch
+  uint64 culled_this_epoch = 2;
+  // Average fitness
+  double avg_fitness = 3;
+  // Median fitness
+  double median_fitness = 4;
+  // Total HC allocated
+  string total_allocation = 5;
+}
+
+// GetEpochSummary request
+message GetEpochSummaryRequest {
+  // Epoch number (0 = current)
+  uint64 epoch = 1;
+}
+
+message GetEpochSummaryResponse {
+  uint64 epoch = 1;
+  int64 started_at = 2;
+  int64 ended_at = 3;
+  // Agents at start of epoch
+  uint64 agents_start = 4;
+  // Agents at end of epoch
+  uint64 agents_end = 5;
+  // Agents culled
+  uint64 agents_culled = 6;
+  // New agents spawned
+  uint64 agents_spawned = 7;
+  // Total HC allocated
+  string total_allocation = 8;
+  // System efficiency ratio
+  double efficiency_ratio = 9;
+  // PID controller output
+  double pid_output = 10;
+}
+
+// ListCulledAgents request
+message ListCulledAgentsRequest {
+  // Filter by epoch (0 = all)
+  uint64 epoch = 1;
+  // Pagination
+  actoris.common.v1.PageRequest page = 2;
+}
+
+message ListCulledAgentsResponse {
+  repeated CulledAgent agents = 1;
+  actoris.common.v1.PageResponse page = 2;
+}
+
+message CulledAgent {
+  string agent_did = 1;
+  // Fitness at time of culling
+  double final_fitness = 2;
+  // Epochs below threshold
+  uint32 epochs_below = 3;
+  // Culling epoch
+  uint64 culled_epoch = 4;
+  // Culling timestamp
+  int64 culled_at = 5;
+  // Reason
+  string reason = 6;
+}
+
+// RequestAllocationAdjustment request
+message RequestAllocationAdjustmentRequest {
+  string agent_did = 1;
+  // New allocation (absolute)
+  optional string new_allocation = 2;
+  // Adjustment percentage (relative)
+  optional double adjustment_percentage = 3;
+  // Reason for adjustment
+  string reason = 4;
+  // Requester DID (for authorization)
+  string requester_did = 5;
+}
+
+message RequestAllocationAdjustmentResponse {
+  bool approved = 1;
+  // New allocation if approved
+  optional string new_allocation = 2;
+  // Reason if rejected
+  optional string rejection_reason = 3;
+}
+
+// StreamAllocationChanges request
+message StreamAllocationChangesRequest {
+  // Filter by agent (optional)
+  optional string agent_did = 1;
+  // Include culling events
+  bool include_culling = 2;
+}
+
+message AllocationChangeEvent {
+  string agent_did = 1;
+  string previous_allocation = 2;
+  string new_allocation = 3;
+  double change_percentage = 4;
+  double fitness = 5;
+  AgentStatus status = 6;
+  uint64 epoch = 7;
+  int64 timestamp = 8;
+  // Culling info if status changed to culled
+  optional CulledAgent culling_info = 9;
+}
+
+// GetSystemMetrics request
+message GetSystemMetricsRequest {
+  // Time range
+  int64 from_timestamp = 1;
+  int64 to_timestamp = 2;
+}
+
+message GetSystemMetricsResponse {
+  // Current efficiency ratio (target: 1.05)
+  double efficiency_ratio = 1;
+  // PID controller state
+  PidState pid_state = 2;
+  // System totals
+  string total_compute_allocated = 3;
+  string total_compute_used = 4;
+  string total_revenue_generated = 5;
+  // Agent counts
+  uint64 total_agents = 6;
+  uint64 active_agents = 7;
+  uint64 culled_agents_total = 8;
+  // Historical efficiency
+  repeated EfficiencyPoint efficiency_history = 9;
+}
+
+message PidState {
+  // Current error (target - actual)
+  double error = 1;
+  // Integral term
+  double integral = 2;
+  // Derivative term
+  double derivative = 3;
+  // Last output
+  double output = 4;
+  // Kp, Ki, Kd coefficients
+  double kp = 5;
+  double ki = 6;
+  double kd = 7;
+}
+
+message EfficiencyPoint {
+  int64 timestamp = 1;
+  double efficiency_ratio = 2;
+  uint64 epoch = 3;
+}

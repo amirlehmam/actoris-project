@@ -1,0 +1,167 @@
+{{- if .Values.identityCloud.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "actoris.identityCloud.fullname" . }}
+  labels:
+    {{- include "actoris.labels" . | nindent 4 }}
+    app.kubernetes.io/component: identity-cloud
+spec:
+  replicas: {{ .Values.identityCloud.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "actoris.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: identity-cloud
+  template:
+    metadata:
+      labels:
+        {{- include "actoris.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: identity-cloud
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{ .Values.identityCloud.service.metricsPort }}"
+    spec:
+      {{- include "actoris.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "actoris.serviceAccountName" . }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: identity-cloud
+          image: "{{ .Values.global.imageRegistry }}/{{ .Values.identityCloud.image.repository }}:{{ .Values.identityCloud.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.identityCloud.image.pullPolicy }}
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.identityCloud.service.grpcPort }}
+              protocol: TCP
+            - name: http
+              containerPort: {{ .Values.identityCloud.service.httpPort }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.identityCloud.service.metricsPort }}
+              protocol: TCP
+          env:
+            - name: LOG_LEVEL
+              value: "{{ .Values.identityCloud.config.logLevel }}"
+            - name: GRPC_PORT
+              value: "{{ .Values.identityCloud.service.grpcPort }}"
+            - name: HTTP_PORT
+              value: "{{ .Values.identityCloud.service.httpPort }}"
+            - name: METRICS_PORT
+              value: "{{ .Values.identityCloud.service.metricsPort }}"
+            - name: NEO4J_URI
+              value: "{{ .Values.identityCloud.neo4j.uri }}"
+            - name: NEO4J_DATABASE
+              value: "{{ .Values.identityCloud.neo4j.database }}"
+            {{- if .Values.identityCloud.neo4j.existingSecret }}
+            - name: NEO4J_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.identityCloud.neo4j.existingSecret }}
+                  key: {{ .Values.identityCloud.neo4j.secretKeys.username }}
+            - name: NEO4J_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.identityCloud.neo4j.existingSecret }}
+                  key: {{ .Values.identityCloud.neo4j.secretKeys.password }}
+            {{- end }}
+            - name: NATS_URL
+              value: "nats://{{ .Release.Name }}-nats:4222"
+            - name: REDIS_URL
+              value: "redis://{{ .Release.Name }}-redis-master:6379"
+            - name: GRACE_EPOCHS
+              value: "{{ .Values.identityCloud.config.graceEpochs }}"
+            - name: INHERITED_TRUST_PCT
+              value: "{{ .Values.identityCloud.config.inheritedTrustPct }}"
+            - name: MIN_INHERITED_TAU
+              value: "{{ .Values.identityCloud.config.minInheritedTau }}"
+            - name: DECAY_FACTOR
+              value: "{{ .Values.identityCloud.config.decayFactor }}"
+          livenessProbe:
+            grpc:
+              port: {{ .Values.identityCloud.service.grpcPort }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            grpc:
+              port: {{ .Values.identityCloud.service.grpcPort }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.identityCloud.resources | nindent 12 }}
+          {{- if .Values.security.mtls.enabled }}
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/actoris/tls
+              readOnly: true
+          {{- end }}
+      {{- if .Values.security.mtls.enabled }}
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ include "actoris.identityCloud.fullname" . }}-tls
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "actoris.identityCloud.fullname" . }}
+  labels:
+    {{- include "actoris.labels" . | nindent 4 }}
+    app.kubernetes.io/component: identity-cloud
+spec:
+  type: {{ .Values.identityCloud.service.type }}
+  ports:
+    - port: {{ .Values.identityCloud.service.grpcPort }}
+      targetPort: grpc
+      protocol: TCP
+      name: grpc
+    - port: {{ .Values.identityCloud.service.httpPort }}
+      targetPort: http
+      protocol: TCP
+      name: http
+    - port: {{ .Values.identityCloud.service.metricsPort }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+  selector:
+    {{- include "actoris.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: identity-cloud
+---
+{{- if .Values.identityCloud.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "actoris.identityCloud.fullname" . }}
+  labels:
+    {{- include "actoris.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "actoris.identityCloud.fullname" . }}
+  minReplicas: {{ .Values.identityCloud.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.identityCloud.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.identityCloud.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.identityCloud.autoscaling.targetMemoryUtilizationPercentage }}
+{{- end }}
+{{- end }}

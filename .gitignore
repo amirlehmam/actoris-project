@@ -1,0 +1,43 @@
+# Rust build artifacts
+/target/
+**/target/
+**/*.rs.bk
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Secrets (never commit)
+*.pem
+*.key
+*.p12
+credentials.json
+
+# Docker
+docker-compose.override.yml
+
+# Logs
+*.log
+logs/
+
+# Test artifacts
+coverage/
+*.profraw
+
+# Generated code
+/gen/
+/proto/gen/
+
+# Local dev
+.cargo/

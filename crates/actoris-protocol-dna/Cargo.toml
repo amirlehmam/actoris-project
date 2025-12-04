@@ -1,0 +1,29 @@
+[package]
+name = "actoris-protocol-dna"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Protocol DNA - Programmable economic primitives for Actoris"
+
+[dependencies]
+# Workspace crates
+actoris-common = { workspace = true }
+
+# Async
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Utils
+uuid = { workspace = true }
+chrono = { workspace = true }
+rust_decimal = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }

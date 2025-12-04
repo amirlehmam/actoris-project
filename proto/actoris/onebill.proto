@@ -1,0 +1,317 @@
+syntax = "proto3";
+
+package actoris.onebill.v1;
+
+import "actoris/common.proto";
+
+option go_package = "github.com/actoris/actoris/gen/go/actoris/onebill/v1;onebillv1";
+
+// OneBill service for pricing, metering, and billing
+service OneBillService {
+  // Calculate price for an action
+  rpc CalculatePrice(CalculatePriceRequest) returns (CalculatePriceResponse);
+
+  // Record usage event
+  rpc RecordUsage(RecordUsageRequest) returns (RecordUsageResponse);
+
+  // Get usage summary for an entity
+  rpc GetUsageSummary(GetUsageSummaryRequest) returns (GetUsageSummaryResponse);
+
+  // Generate invoice
+  rpc GenerateInvoice(GenerateInvoiceRequest) returns (GenerateInvoiceResponse);
+
+  // Get invoice by ID
+  rpc GetInvoice(GetInvoiceRequest) returns (GetInvoiceResponse);
+
+  // List invoices
+  rpc ListInvoices(ListInvoicesRequest) returns (ListInvoicesResponse);
+
+  // Settle invoice (mark as paid)
+  rpc SettleInvoice(SettleInvoiceRequest) returns (SettleInvoiceResponse);
+
+  // Get pricing rules
+  rpc GetPricingRules(GetPricingRulesRequest) returns (GetPricingRulesResponse);
+
+  // Update pricing rules (admin only)
+  rpc UpdatePricingRules(UpdatePricingRulesRequest) returns (UpdatePricingRulesResponse);
+}
+
+// CalculatePrice request
+message CalculatePriceRequest {
+  // Actor's DID
+  string actor_did = 1;
+  // Action type identifier
+  string action_type = 2;
+  // Estimated compute (PFLOP-hours)
+  string compute_hc = 3;
+  // Task complexity
+  actoris.common.v1.TaskComplexity task_complexity = 4;
+  // Data sensitivity
+  actoris.common.v1.DataSensitivity data_sensitivity = 5;
+  // Optional budget limit
+  optional string budget_limit = 6;
+  // Include breakdown details
+  bool include_breakdown = 7;
+}
+
+message CalculatePriceResponse {
+  // Base compute cost (C)
+  string base_cost = 1;
+  // Risk premium (R)
+  string risk_premium = 2;
+  // Trust discount (T)
+  string trust_discount = 3;
+  // Final price (P = C + R - T)
+  string final_price = 4;
+  // Detailed breakdown
+  optional PricingBreakdown breakdown = 5;
+  // Whether price is within budget
+  optional bool within_budget = 6;
+  // Quote validity (milliseconds)
+  uint64 valid_for_ms = 7;
+  // Quote expiration timestamp
+  int64 expires_at = 8;
+  // Quote ID for reference
+  string quote_id = 9;
+}
+
+message PricingBreakdown {
+  // Base rate per PFLOP-hour
+  string compute_rate = 1;
+  // Applied risk factors
+  repeated RiskFactor risk_factors = 2;
+  // Total risk multiplier
+  double total_risk_multiplier = 3;
+  // Trust-based discount rate
+  double discount_rate = 4;
+  // Calculation timestamp
+  int64 calculated_at = 5;
+  // Rules engine decision ID
+  optional string decision_id = 6;
+}
+
+message RiskFactor {
+  // Factor name
+  string name = 1;
+  // Risk multiplier
+  double multiplier = 2;
+  // Description
+  string description = 3;
+}
+
+// RecordUsage request
+message RecordUsageRequest {
+  // Actor's DID
+  string actor_did = 1;
+  // Client's DID
+  string client_did = 2;
+  // Action type
+  string action_type = 3;
+  // Compute consumed
+  string compute_hc = 4;
+  // Price charged
+  string price = 5;
+  // Associated outcome record ID
+  optional string outcome_record_id = 6;
+  // Timestamp
+  int64 timestamp = 7;
+}
+
+message RecordUsageResponse {
+  // Usage record ID
+  string usage_id = 1;
+}
+
+// GetUsageSummary request
+message GetUsageSummaryRequest {
+  string did = 1;
+  // Time range
+  int64 from_timestamp = 2;
+  int64 to_timestamp = 3;
+  // Group by (action_type, day, week, month)
+  optional string group_by = 4;
+}
+
+message GetUsageSummaryResponse {
+  // Total compute consumed
+  string total_compute_hc = 1;
+  // Total cost
+  string total_cost = 2;
+  // Total revenue (if provider)
+  string total_revenue = 3;
+  // Action count
+  uint64 action_count = 4;
+  // Breakdown by group
+  repeated UsageGroup groups = 5;
+}
+
+message UsageGroup {
+  // Group key (action type, date, etc.)
+  string key = 1;
+  string compute_hc = 2;
+  string cost = 3;
+  string revenue = 4;
+  uint64 count = 5;
+}
+
+// GenerateInvoice request
+message GenerateInvoiceRequest {
+  // Entity to invoice
+  string did = 1;
+  // Billing period
+  int64 period_start = 2;
+  int64 period_end = 3;
+  // Invoice type
+  InvoiceType invoice_type = 4;
+}
+
+enum InvoiceType {
+  INVOICE_TYPE_UNSPECIFIED = 0;
+  // Invoice for compute consumption
+  INVOICE_TYPE_CONSUMPTION = 1;
+  // Invoice for services provided (revenue)
+  INVOICE_TYPE_EARNINGS = 2;
+}
+
+message GenerateInvoiceResponse {
+  Invoice invoice = 1;
+}
+
+message Invoice {
+  // Invoice ID
+  string id = 1;
+  // Entity DID
+  string did = 2;
+  // Invoice type
+  InvoiceType invoice_type = 3;
+  // Billing period
+  int64 period_start = 4;
+  int64 period_end = 5;
+  // Line items
+  repeated InvoiceLineItem items = 6;
+  // Subtotal
+  string subtotal = 7;
+  // Adjustments
+  string adjustments = 8;
+  // Total
+  string total = 9;
+  // Status
+  InvoiceStatus status = 10;
+  // Created timestamp
+  int64 created_at = 11;
+  // Due timestamp
+  int64 due_at = 12;
+  // Paid timestamp
+  optional int64 paid_at = 13;
+}
+
+enum InvoiceStatus {
+  INVOICE_STATUS_UNSPECIFIED = 0;
+  INVOICE_STATUS_DRAFT = 1;
+  INVOICE_STATUS_PENDING = 2;
+  INVOICE_STATUS_PAID = 3;
+  INVOICE_STATUS_OVERDUE = 4;
+  INVOICE_STATUS_CANCELLED = 5;
+}
+
+message InvoiceLineItem {
+  // Description
+  string description = 1;
+  // Action type
+  string action_type = 2;
+  // Quantity
+  string quantity = 3;
+  // Unit price
+  string unit_price = 4;
+  // Line total
+  string total = 5;
+}
+
+// GetInvoice request
+message GetInvoiceRequest {
+  string invoice_id = 1;
+}
+
+message GetInvoiceResponse {
+  Invoice invoice = 1;
+}
+
+// ListInvoices request
+message ListInvoicesRequest {
+  string did = 1;
+  // Filter by status
+  optional InvoiceStatus status = 2;
+  // Filter by type
+  optional InvoiceType invoice_type = 3;
+  // Pagination
+  actoris.common.v1.PageRequest page = 4;
+}
+
+message ListInvoicesResponse {
+  repeated Invoice invoices = 1;
+  actoris.common.v1.PageResponse page = 2;
+}
+
+// SettleInvoice request
+message SettleInvoiceRequest {
+  string invoice_id = 1;
+  // Payment reference
+  string payment_reference = 2;
+  // Payment method
+  string payment_method = 3;
+  // Amount paid
+  string amount_paid = 4;
+}
+
+message SettleInvoiceResponse {
+  Invoice invoice = 1;
+}
+
+// GetPricingRules request
+message GetPricingRulesRequest {
+  // Optional: filter by action type
+  optional string action_type = 1;
+}
+
+message GetPricingRulesResponse {
+  // Base rate per PFLOP-hour
+  string base_rate = 1;
+  // Risk rules
+  repeated PricingRule risk_rules = 2;
+  // Discount rules
+  repeated PricingRule discount_rules = 3;
+  // Last updated
+  int64 updated_at = 4;
+}
+
+message PricingRule {
+  // Rule ID
+  string id = 1;
+  // Rule name
+  string name = 2;
+  // Condition (JSON Decision Model format)
+  string condition = 3;
+  // Multiplier or discount
+  double value = 4;
+  // Description
+  string description = 5;
+  // Priority (lower = higher priority)
+  uint32 priority = 6;
+  // Active
+  bool active = 7;
+}
+
+// UpdatePricingRules request
+message UpdatePricingRulesRequest {
+  // New base rate (optional)
+  optional string base_rate = 1;
+  // Rules to add/update
+  repeated PricingRule rules = 2;
+  // Rule IDs to delete
+  repeated string delete_rule_ids = 3;
+}
+
+message UpdatePricingRulesResponse {
+  bool success = 1;
+  int64 updated_at = 2;
+}

@@ -1,0 +1,56 @@
+# Prometheus configuration for Actoris Economic OS
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers: []
+
+rule_files: []
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # TrustLedger service
+  - job_name: 'trustledger'
+    static_configs:
+      - targets: ['trustledger:9090']
+    metrics_path: /metrics
+
+  # OneBill service
+  - job_name: 'onebill'
+    static_configs:
+      - targets: ['onebill:9090']
+    metrics_path: /metrics
+
+  # Darwinian service
+  - job_name: 'darwinian'
+    static_configs:
+      - targets: ['darwinian:9090']
+    metrics_path: /metrics
+
+  # Identity Cloud service
+  - job_name: 'identity-cloud'
+    static_configs:
+      - targets: ['identity-cloud:9090']
+    metrics_path: /metrics
+
+  # Redis
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+
+  # NATS
+  - job_name: 'nats'
+    static_configs:
+      - targets: ['nats:8222']
+    metrics_path: /metrics
+
+  # QuestDB
+  - job_name: 'questdb'
+    static_configs:
+      - targets: ['questdb:9000']
+    metrics_path: /metrics

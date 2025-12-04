@@ -1,0 +1,112 @@
+[workspace]
+members = [
+    "crates/actoris-common",
+    "crates/actoris-trustledger",
+    "crates/actoris-onebill",
+    "crates/actoris-darwinian",
+    "crates/actoris-sidecar",
+    "crates/actoris-protocol-dna",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Actoris Team"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/actoris/actoris"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+async-trait = "0.1"
+futures = "0.3"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rkyv = { version = "0.7", features = ["validation"] }
+
+# Crypto
+frost-ed25519 = "1.0"
+ed25519-dalek = { version = "2.1", features = ["rand_core", "serde"] }
+blake3 = "1.5"
+rand = "0.8"
+
+# Database clients
+eventstore = "3.0"
+redis = { version = "0.24", features = ["tokio-comp", "cluster", "connection-manager"] }
+
+# Messaging
+async-nats = "0.33"
+
+# gRPC
+tonic = "0.10"
+tonic-build = "0.10"
+prost = "0.12"
+prost-build = "0.12"
+prost-types = "0.12"
+
+# Rules engine
+zen-engine = "0.17"
+
+# PID control
+pid = "4.0"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+prometheus = "0.13"
+opentelemetry = { version = "0.21", features = ["rt-tokio"] }
+metrics = "0.21"
+
+# Utils
+uuid = { version = "1.6", features = ["v7", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+rust_decimal = { version = "1.33", features = ["serde"] }
+thiserror = "1.0"
+anyhow = "1.0"
+config = "0.13"
+lazy_static = "1.4"
+parking_lot = "0.12"
+dashmap = "5.5"
+flurry = "0.5"
+base64 = "0.21"
+hex = "0.4"
+bytes = "1.5"
+bs58 = "0.5"
+bincode = "1.3"
+rust_decimal_macros = "1.33"
+
+# Workspace crates
+actoris-common = { path = "crates/actoris-common" }
+actoris-trustledger = { path = "crates/actoris-trustledger" }
+actoris-onebill = { path = "crates/actoris-onebill" }
+actoris-darwinian = { path = "crates/actoris-darwinian" }
+actoris-sidecar = { path = "crates/actoris-sidecar" }
+actoris-protocol-dna = { path = "crates/actoris-protocol-dna" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+debug = false
+
+[profile.release-debug]
+inherits = "release"
+debug = true
+
+[profile.bench]
+inherits = "release"
+debug = true
+
+# Dev dependencies for benchmarks
+[workspace.dependencies.criterion]
+version = "0.5"
+features = ["html_reports"]
+
+[[bench]]
+name = "benchmarks"
+harness = false
+path = "benches/benchmarks.rs"

@@ -1,0 +1,48 @@
+[package]
+name = "actoris-api-gateway"
+version = "0.1.0"
+edition = "2021"
+description = "REST API Gateway for ACTORIS"
+
+[[bin]]
+name = "api-gateway"
+path = "src/main.rs"
+
+[dependencies]
+# Web framework
+axum = { version = "0.7", features = ["macros", "ws"] }
+tower = { version = "0.4", features = ["full"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "compression-gzip"] }
+
+# Async
+tokio = { version = "1.35", features = ["full"] }
+futures = "0.3"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json"] }
+
+# Database
+redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
+
+# Crypto
+blake3 = "1.5"
+uuid = { version = "1.6", features = ["v7", "serde"] }
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+rand = "0.8"
+
+# Utils
+chrono = { version = "0.4", features = ["serde"] }
+rust_decimal = { version = "1.33", features = ["serde"] }
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Config
+dotenvy = "0.15"

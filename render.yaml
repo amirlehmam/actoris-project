@@ -1,0 +1,41 @@
+# Render Blueprint for ACTORIS
+# https://render.com/docs/blueprint-spec
+
+services:
+  # Frontend (Next.js)
+  - type: web
+    name: actoris-ui
+    env: node
+    plan: free
+    buildCommand: cd ui && npm ci && npm run build
+    startCommand: cd ui && npm start
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: actoris-api
+          property: host
+    healthCheckPath: /
+
+  # API Gateway (Rust)
+  - type: web
+    name: actoris-api
+    env: rust
+    plan: free
+    buildCommand: cd api-gateway && cargo build --release
+    startCommand: ./api-gateway/target/release/api-gateway
+    envVars:
+      - key: RUST_LOG
+        value: info
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: actoris-redis
+          property: connectionString
+    healthCheckPath: /health
+
+databases:
+  # Redis for caching and sessions
+  - name: actoris-redis
+    plan: free
+    ipAllowList: []

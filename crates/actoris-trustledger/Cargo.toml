@@ -1,0 +1,55 @@
+[package]
+name = "actoris-trustledger"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "TrustLedger - Consensus engine and immutable ledger for Actoris"
+
+[dependencies]
+# Workspace crates
+actoris-common = { workspace = true }
+
+# Async
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Crypto
+frost-ed25519 = { workspace = true }
+blake3 = { workspace = true }
+
+# Database
+eventstore = { workspace = true }
+
+# Messaging
+async-nats = { workspace = true }
+
+# gRPC
+tonic = { workspace = true }
+prost = { workspace = true }
+
+# Observability
+tracing = { workspace = true }
+prometheus = { workspace = true }
+
+# Utils
+uuid = { workspace = true }
+chrono = { workspace = true }
+rust_decimal = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+rand = { workspace = true }
+
+[build-dependencies]
+tonic-build = { workspace = true }
+prost-build = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }
+rust_decimal_macros = { workspace = true }

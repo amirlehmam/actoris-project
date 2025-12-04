@@ -1,0 +1,200 @@
+syntax = "proto3";
+
+package actoris.identity.v1;
+
+import "actoris/common.proto";
+
+option go_package = "github.com/actoris/actoris/gen/go/actoris/identity/v1;identityv1";
+
+// IdentityCloud service for managing UnifiedIDs and TrustScores
+service IdentityService {
+  // Create a new UnifiedID
+  rpc CreateUnifiedID(CreateUnifiedIDRequest) returns (CreateUnifiedIDResponse);
+
+  // Get UnifiedID by DID
+  rpc GetUnifiedID(GetUnifiedIDRequest) returns (GetUnifiedIDResponse);
+
+  // Resolve identity lineage (parent chain)
+  rpc ResolveLineage(ResolveLineageRequest) returns (ResolveLineageResponse);
+
+  // Get trust score for an entity
+  rpc GetTrustScore(GetTrustScoreRequest) returns (GetTrustScoreResponse);
+
+  // Update trust score (internal use)
+  rpc UpdateTrustScore(UpdateTrustScoreRequest) returns (UpdateTrustScoreResponse);
+
+  // Get HC wallet balance
+  rpc GetWallet(GetWalletRequest) returns (GetWalletResponse);
+
+  // Credit HC to wallet
+  rpc CreditWallet(CreditWalletRequest) returns (CreditWalletResponse);
+
+  // Debit HC from wallet
+  rpc DebitWallet(DebitWalletRequest) returns (DebitWalletResponse);
+
+  // Lock HC in escrow
+  rpc LockWallet(LockWalletRequest) returns (LockWalletResponse);
+
+  // Release HC from escrow
+  rpc ReleaseWallet(ReleaseWalletRequest) returns (ReleaseWalletResponse);
+
+  // Verify entity signature
+  rpc VerifySignature(VerifySignatureRequest) returns (VerifySignatureResponse);
+}
+
+// CreateUnifiedID request
+message CreateUnifiedIDRequest {
+  // Entity type
+  actoris.common.v1.EntityType entity_type = 1;
+  // Parent DID for spawned agents
+  optional string parent_did = 2;
+  // Ed25519 public key (32 bytes)
+  bytes public_key = 3;
+  // Optional domain for did:web (organizations/humans)
+  optional string domain = 4;
+}
+
+message CreateUnifiedIDResponse {
+  // Created UnifiedID
+  actoris.common.v1.UnifiedID unified_id = 1;
+  // Initial trust score
+  actoris.common.v1.TrustScore trust_score = 2;
+  // Initial HC wallet
+  actoris.common.v1.HcWallet wallet = 3;
+}
+
+// GetUnifiedID request
+message GetUnifiedIDRequest {
+  string did = 1;
+}
+
+message GetUnifiedIDResponse {
+  actoris.common.v1.UnifiedID unified_id = 1;
+}
+
+// ResolveLineage request
+message ResolveLineageRequest {
+  string did = 1;
+  // Maximum depth to traverse (default: 10)
+  uint32 max_depth = 2;
+}
+
+message ResolveLineageResponse {
+  // Lineage from child to root (first element is the requested DID)
+  repeated actoris.common.v1.UnifiedID lineage = 1;
+  // Trust inheritance at each level
+  repeated double trust_inheritance = 2;
+}
+
+// GetTrustScore request
+message GetTrustScoreRequest {
+  string did = 1;
+}
+
+message GetTrustScoreResponse {
+  actoris.common.v1.TrustScore trust_score = 1;
+}
+
+// UpdateTrustScore request
+message UpdateTrustScoreRequest {
+  string did = 1;
+  // Verification outcome update
+  optional VerificationUpdate verification_update = 2;
+  // Dispute update
+  optional DisputeUpdate dispute_update = 3;
+  // SLA compliance update
+  optional double sla_compliance = 4;
+  // Network reputation update
+  optional double network_reputation = 5;
+  // Expected version for optimistic concurrency
+  uint64 expected_version = 6;
+}
+
+message VerificationUpdate {
+  bool success = 1;
+}
+
+message DisputeUpdate {
+  bool dispute_occurred = 1;
+  bool dispute_won = 2;
+}
+
+message UpdateTrustScoreResponse {
+  actoris.common.v1.TrustScore trust_score = 1;
+}
+
+// GetWallet request
+message GetWalletRequest {
+  string did = 1;
+}
+
+message GetWalletResponse {
+  actoris.common.v1.HcWallet wallet = 1;
+}
+
+// CreditWallet request
+message CreditWalletRequest {
+  string did = 1;
+  // Amount to credit (as string for precision)
+  string amount = 2;
+  // Reason for credit
+  string reason = 3;
+  // Reference ID (e.g., payment ID)
+  optional string reference_id = 4;
+}
+
+message CreditWalletResponse {
+  actoris.common.v1.HcWallet wallet = 1;
+}
+
+// DebitWallet request
+message DebitWalletRequest {
+  string did = 1;
+  string amount = 2;
+  string reason = 3;
+  optional string reference_id = 4;
+  // Expected version for optimistic concurrency
+  uint64 expected_version = 5;
+}
+
+message DebitWalletResponse {
+  actoris.common.v1.HcWallet wallet = 1;
+}
+
+// LockWallet request
+message LockWalletRequest {
+  string did = 1;
+  string amount = 2;
+  // Escrow reference ID
+  string escrow_id = 3;
+  uint64 expected_version = 4;
+}
+
+message LockWalletResponse {
+  actoris.common.v1.HcWallet wallet = 1;
+}
+
+// ReleaseWallet request
+message ReleaseWalletResponse {
+  actoris.common.v1.HcWallet wallet = 1;
+}
+
+message ReleaseWalletRequest {
+  string did = 1;
+  string amount = 2;
+  string escrow_id = 3;
+  // Target DID for transfer (if different from owner)
+  optional string target_did = 4;
+  uint64 expected_version = 5;
+}
+
+// VerifySignature request
+message VerifySignatureRequest {
+  string did = 1;
+  bytes message = 2;
+  bytes signature = 3;
+}
+
+message VerifySignatureResponse {
+  bool valid = 1;
+}

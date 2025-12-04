@@ -1,0 +1,267 @@
+# Actoris Economic OS - Local Development Environment
+#
+# Start: docker-compose up -d
+# Stop:  docker-compose down
+# Logs:  docker-compose logs -f [service]
+# Reset: docker-compose down -v
+
+version: '3.8'
+
+services:
+  # ============================================================================
+  # Neo4j - Identity Graph (UnifiedID, TrustScore, lineage)
+  # ============================================================================
+  neo4j:
+    image: neo4j:5-enterprise
+    container_name: actoris-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/actoris_dev_password
+      NEO4J_ACCEPT_LICENSE_AGREEMENT: "yes"
+      NEO4J_PLUGINS: '["graph-data-science"]'
+      NEO4J_dbms_memory_heap_initial__size: 512m
+      NEO4J_dbms_memory_heap_max__size: 1G
+      NEO4J_dbms_memory_pagecache_size: 512m
+    ports:
+      - "7474:7474"  # HTTP Browser
+      - "7687:7687"  # Bolt protocol
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - actoris-network
+
+  # ============================================================================
+  # QuestDB - Time-series metrics (AGDP, TrustScore history, Darwinian fitness)
+  # ============================================================================
+  questdb:
+    image: questdb/questdb:latest
+    container_name: actoris-questdb
+    environment:
+      QDB_LOG_W_STDOUT_LEVEL: INFO
+    ports:
+      - "9000:9000"   # REST API & Web Console
+      - "9009:9009"   # InfluxDB line protocol
+      - "8812:8812"   # PostgreSQL wire protocol
+    volumes:
+      - questdb_data:/var/lib/questdb
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/status || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - actoris-network
+
+  # ============================================================================
+  # EventStoreDB - Immutable Ledger (OutcomeRecords)
+  # ============================================================================
+  eventstore:
+    image: eventstore/eventstore:latest
+    container_name: actoris-eventstore
+    environment:
+      EVENTSTORE_CLUSTER_SIZE: 1
+      EVENTSTORE_RUN_PROJECTIONS: All
+      EVENTSTORE_START_STANDARD_PROJECTIONS: "true"
+      EVENTSTORE_INSECURE: "true"
+      EVENTSTORE_ENABLE_EXTERNAL_TCP: "true"
+      EVENTSTORE_ENABLE_ATOM_PUB_OVER_HTTP: "true"
+      EVENTSTORE_MEM_DB: "false"
+    ports:
+      - "2113:2113"   # HTTP API & UI
+      - "1113:1113"   # TCP client
+    volumes:
+      - eventstore_data:/var/lib/eventstore
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:2113/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - actoris-network
+
+  # ============================================================================
+  # Redis Cluster - Hot Cache (TrustScores, pricing rules)
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: actoris-redis
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - actoris-network
+
+  # ============================================================================
+  # NATS JetStream - Event Bus
+  # ============================================================================
+  nats:
+    image: nats:latest
+    container_name: actoris-nats
+    command: >
+      -js
+      -m 8222
+      --store_dir /data
+      --max_memory_store 1GB
+      --max_file_store 10GB
+    ports:
+      - "4222:4222"   # Client connections
+      - "8222:8222"   # HTTP monitoring
+      - "6222:6222"   # Cluster routing
+    volumes:
+      - nats_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8222/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - actoris-network
+
+  # ============================================================================
+  # HashiCorp Vault - Secrets Management (Dev Mode)
+  # ============================================================================
+  vault:
+    image: hashicorp/vault:latest
+    container_name: actoris-vault
+    cap_add:
+      - IPC_LOCK
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: actoris_dev_token
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+      VAULT_ADDR: http://0.0.0.0:8200
+    ports:
+      - "8200:8200"
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - actoris-network
+
+  # ============================================================================
+  # ClickHouse - Analytics (OLAP queries, dashboards)
+  # ============================================================================
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: actoris-clickhouse
+    environment:
+      CLICKHOUSE_DB: actoris
+      CLICKHOUSE_USER: actoris
+      CLICKHOUSE_PASSWORD: actoris_dev
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ports:
+      - "8123:8123"   # HTTP interface
+      - "9440:9000"   # Native interface (remapped to avoid QuestDB conflict)
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_logs:/var/log/clickhouse-server
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - actoris-network
+
+  # ============================================================================
+  # Jaeger - Distributed Tracing
+  # ============================================================================
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: actoris-jaeger
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"  # UI
+      - "4317:4317"    # OTLP gRPC
+      - "4318:4318"    # OTLP HTTP
+      - "14268:14268"  # Jaeger thrift HTTP
+    networks:
+      - actoris-network
+
+  # ============================================================================
+  # Prometheus - Metrics Collection
+  # ============================================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: actoris-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    volumes:
+      - prometheus_data:/prometheus
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9090/-/healthy || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - actoris-network
+
+  # ============================================================================
+  # Grafana - Dashboards
+  # ============================================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: actoris-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: actoris_dev
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - questdb
+    networks:
+      - actoris-network
+
+networks:
+  actoris-network:
+    driver: bridge
+    name: actoris-network
+
+volumes:
+  neo4j_data:
+    name: actoris-neo4j-data
+  neo4j_logs:
+    name: actoris-neo4j-logs
+  questdb_data:
+    name: actoris-questdb-data
+  eventstore_data:
+    name: actoris-eventstore-data
+  redis_data:
+    name: actoris-redis-data
+  nats_data:
+    name: actoris-nats-data
+  clickhouse_data:
+    name: actoris-clickhouse-data
+  clickhouse_logs:
+    name: actoris-clickhouse-logs
+  prometheus_data:
+    name: actoris-prometheus-data
+  grafana_data:
+    name: actoris-grafana-data

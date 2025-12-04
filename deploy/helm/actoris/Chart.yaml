@@ -1,0 +1,47 @@
+apiVersion: v2
+name: actoris
+description: ACTORIS Economic OS for AI Agents - Complete Helm Chart
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+
+keywords:
+  - ai-agents
+  - economic-os
+  - trustledger
+  - bft-consensus
+  - frost-signatures
+
+home: https://github.com/actoris/actoris
+sources:
+  - https://github.com/actoris/actoris
+
+maintainers:
+  - name: ACTORIS Team
+    email: team@actoris.io
+
+dependencies:
+  - name: redis
+    version: "18.x.x"
+    repository: https://charts.bitnami.com/bitnami
+    condition: redis.enabled
+
+  - name: nats
+    version: "1.x.x"
+    repository: https://nats-io.github.io/k8s/helm/charts/
+    condition: nats.enabled
+
+  - name: neo4j
+    version: "5.x.x"
+    repository: https://helm.neo4j.com/neo4j
+    condition: neo4j.enabled
+
+  - name: prometheus
+    version: "25.x.x"
+    repository: https://prometheus-community.github.io/helm-charts
+    condition: monitoring.enabled
+
+  - name: grafana
+    version: "7.x.x"
+    repository: https://grafana.github.io/helm-charts
+    condition: monitoring.enabled
