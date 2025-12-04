@@ -125,13 +125,20 @@ fn create_rest_api(
 ) -> axum::Router {
     use axum::{
         extract::{Path, Query, State},
-        http::StatusCode,
+        http::{header, Method, StatusCode},
         response::Json,
         routing::{delete, get, post, put},
         Router,
     };
     use serde::{Deserialize, Serialize};
     use std::sync::Arc;
+    use tower_http::cors::{Any, CorsLayer};
+
+    // CORS layer to allow frontend connections from any origin
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE, Method::OPTIONS])
+        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT]);
 
     #[derive(Deserialize)]
     struct RetrieveQuery {
@@ -149,9 +156,33 @@ fn create_rest_api(
 
     Router::new()
         // Health check
-        .route("/health", get(|| async { "OK" }))
+        .route("/health", get(|| async {
+            Json(serde_json::json!({"status": "healthy"}))
+        }))
 
-        // Store stats
+        // Store stats (both routes for compatibility)
+        .route("/praxis/stats", get({
+            let svc = service.clone();
+            move || {
+                let svc = svc.clone();
+                async move {
+                    let stats = svc.store.stats();
+                    let success_rate = if stats.total_memories > 0 {
+                        stats.successful_memories as f32 / stats.total_memories as f32
+                    } else {
+                        0.0
+                    };
+                    Json(serde_json::json!({
+                        "total_memories": stats.total_memories,
+                        "unique_agents": stats.unique_agents,
+                        "avg_memories_per_agent": stats.avg_memories_per_agent,
+                        "max_memories_per_agent": stats.max_memories_per_agent,
+                        "successful_memories": stats.successful_memories,
+                        "success_rate": success_rate,
+                    }))
+                }
+            }
+        }))
         .route("/api/v1/stats", get({
             let svc = service.clone();
             move || {
@@ -169,7 +200,46 @@ fn create_rest_api(
             }
         }))
 
-        // Get agent memories
+        // Get agent memories (both routes for compatibility)
+        .route("/praxis/agents/:agent_id/memories", get({
+            let svc = service.clone();
+            move |Path(agent_id): Path<String>, Query(query): Query<MemoriesQuery>| {
+                let svc = svc.clone();
+                async move {
+                    let agent_uuid = match uuid::Uuid::parse_str(&agent_id) {
+                        Ok(id) => id,
+                        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "Invalid agent_id"}))),
+                    };
+
+                    let memories = svc.store.get_agent_memories(&agent_uuid).await;
+                    let total = memories.len();
+
+                    let offset = query.offset.unwrap_or(0) as usize;
+                    let limit = query.limit.unwrap_or(50) as usize;
+
+                    let memories: Vec<_> = memories
+                        .into_iter()
+                        .skip(offset)
+                        .take(limit)
+                        .map(|m| serde_json::json!({
+                            "id": m.id.to_string(),
+                            "agent_id": m.agent_id.to_string(),
+                            "directive": m.internal_state.directive,
+                            "action": m.action.raw_action,
+                            "is_successful": m.is_successful(),
+                            "created_at": m.created_at.to_rfc3339(),
+                            "retrieval_count": m.retrieval_count,
+                            "reinforcement_score": m.reinforcement_score,
+                        }))
+                        .collect();
+
+                    (StatusCode::OK, Json(serde_json::json!({
+                        "memories": memories,
+                        "total": total,
+                    })))
+                }
+            }
+        }))
         .route("/api/v1/agents/:agent_id/memories", get({
             let svc = service.clone();
             move |Path(agent_id): Path<String>, Query(query): Query<MemoriesQuery>| {
@@ -210,7 +280,34 @@ fn create_rest_api(
             }
         }))
 
-        // Get agent competence
+        // Get agent competence (both routes for compatibility)
+        .route("/praxis/agents/:agent_id/competence", get({
+            let svc = service.clone();
+            move |Path(agent_id): Path<String>| {
+                let svc = svc.clone();
+                async move {
+                    let agent_uuid = match uuid::Uuid::parse_str(&agent_id) {
+                        Ok(id) => id,
+                        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "Invalid agent_id"}))),
+                    };
+
+                    let memories = svc.store.get_agent_memories(&agent_uuid).await;
+                    let competence = actoris_praxis::ProceduralCompetence::from_memories(&memories);
+
+                    (StatusCode::OK, Json(serde_json::json!({
+                        "total_memories": competence.total_memories,
+                        "successful_memories": competence.successful_memories,
+                        "success_rate": competence.success_rate,
+                        "diversity_score": competence.diversity_score,
+                        "generalization_score": competence.generalization_score,
+                        "learning_velocity": competence.learning_velocity,
+                        "retrieval_accuracy": competence.retrieval_accuracy,
+                        "memory_utilization": competence.memory_utilization,
+                        "fitness_multiplier": competence.fitness_multiplier(),
+                    })))
+                }
+            }
+        }))
         .route("/api/v1/agents/:agent_id/competence", get({
             let svc = service.clone();
             move |Path(agent_id): Path<String>| {
@@ -247,4 +344,6 @@ fn create_rest_api(
                 "description": "Procedural Recall for Agents with eXperiences Indexed by State",
             }))
         }))
+        // Apply CORS middleware
+        .layer(cors)
 }
