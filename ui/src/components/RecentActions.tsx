@@ -15,6 +15,7 @@ const statusConfig = {
     color: 'text-gray-500',
     bgColor: 'bg-gray-100',
     label: 'Pending',
+    animate: false,
   },
   processing: {
     icon: Loader2,
@@ -28,24 +29,28 @@ const statusConfig = {
     color: 'text-green-500',
     bgColor: 'bg-green-100',
     label: 'Verified',
+    animate: false,
   },
   disputed: {
     icon: AlertTriangle,
     color: 'text-amber-500',
     bgColor: 'bg-amber-100',
     label: 'Disputed',
+    animate: false,
   },
   settled: {
     icon: CheckCircle2,
     color: 'text-blue-500',
     bgColor: 'bg-blue-100',
     label: 'Settled',
+    animate: false,
   },
   failed: {
     icon: XCircle,
     color: 'text-red-500',
     bgColor: 'bg-red-100',
     label: 'Failed',
+    animate: false,
   },
 }
 
