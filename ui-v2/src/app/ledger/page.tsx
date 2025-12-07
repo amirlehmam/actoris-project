@@ -12,14 +12,15 @@ export default function TrustLedgerPage() {
     refetchInterval: 5000,
   })
 
+  const verifiedActions = actions?.filter(a => a.verification) || []
   const stats = {
     total: actions?.length || 0,
     verified: actions?.filter(a => a.status === 'verified').length || 0,
     processing: actions?.filter(a => a.status === 'processing').length || 0,
     disputed: actions?.filter(a => a.status === 'disputed').length || 0,
-    avgLatency: actions?.filter(a => a.verification)
-      .reduce((acc, a) => acc + (a.verification?.latency_ms || 0), 0) /
-      (actions?.filter(a => a.verification).length || 1),
+    avgLatency: verifiedActions.length > 0
+      ? verifiedActions.reduce((acc, a) => acc + (a.verification?.latency_ms || 0), 0) / verifiedActions.length
+      : 0,
   }
 
   return (
