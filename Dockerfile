@@ -38,17 +38,16 @@ COPY --from=builder /app/target/release/actoris-praxis /app/actoris-praxis
 RUN useradd -r -s /bin/false praxis
 USER praxis
 
-# Expose port
+# Expose port (Railway will override with $PORT)
 EXPOSE 8084
 
 # Set environment variables
 ENV PRAXIS_HOST=0.0.0.0
-ENV PRAXIS_PORT=8084
 ENV RUST_LOG=info
 
-# Health check
+# Health check - uses $PORT if set, otherwise 8084
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8084/health || exit 1
+    CMD curl -f http://localhost:${PORT:-8084}/health || exit 1
 
 # Run the service
 CMD ["/app/actoris-praxis"]

@@ -36,12 +36,45 @@ impl PraxisConfig {
         // Try to load .env file
         let _ = dotenvy::dotenv();
 
-        let config = config::Config::builder()
-            .add_source(config::Environment::with_prefix("PRAXIS"))
-            .build()?;
+        let mut cfg = Self::default();
 
-        // Try to deserialize, fall back to defaults
-        config.try_deserialize().or_else(|_| Ok(Self::default()))
+        // Check for Railway's PORT env variable first (takes priority)
+        if let Ok(port) = std::env::var("PORT") {
+            if let Ok(p) = port.parse::<u16>() {
+                cfg.port = p;
+            }
+        }
+
+        // Then check for PRAXIS_ prefixed variables
+        if let Ok(host) = std::env::var("PRAXIS_HOST") {
+            cfg.host = host;
+        }
+        if let Ok(port) = std::env::var("PRAXIS_PORT") {
+            if let Ok(p) = port.parse::<u16>() {
+                cfg.port = p;
+            }
+        }
+
+        // Retrieval settings
+        if let Ok(val) = std::env::var("PRAXIS_RETRIEVAL_SEARCH_BREADTH") {
+            if let Ok(v) = val.parse() {
+                cfg.retrieval.search_breadth = v;
+            }
+        }
+        if let Ok(val) = std::env::var("PRAXIS_RETRIEVAL_SIMILARITY_THRESHOLD") {
+            if let Ok(v) = val.parse() {
+                cfg.retrieval.similarity_threshold = v;
+            }
+        }
+
+        // Storage settings
+        if let Ok(val) = std::env::var("PRAXIS_STORAGE_MAX_MEMORIES_PER_AGENT") {
+            if let Ok(v) = val.parse() {
+                cfg.storage.max_memories_per_agent = v;
+            }
+        }
+
+        Ok(cfg)
     }
 }
 
