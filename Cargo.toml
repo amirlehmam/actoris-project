@@ -63,7 +63,7 @@ opentelemetry = { version = "0.21", features = ["rt-tokio"] }
 metrics = "0.21"
 
 # Utils
-uuid = { version = "1.6", features = ["v7", "serde"] }
+uuid = { version = "1.6", features = ["v4", "v7", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 rust_decimal = { version = "1.33", features = ["serde"] }
 thiserror = "1.0"

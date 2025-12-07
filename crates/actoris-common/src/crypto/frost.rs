@@ -92,13 +92,20 @@ pub struct SigningCommitment {
 impl SigningCommitment {
     /// Convert to FROST SigningCommitments
     pub fn to_frost(&self) -> Result<(ParticipantId, frost::round1::SigningCommitments), CryptoError> {
-        let identifier = ParticipantId::deserialize(&self.identifier)
+        let id_bytes: [u8; 32] = self.identifier.clone().try_into()
+            .map_err(|_| CryptoError::FrostError("Invalid identifier length".to_string()))?;
+        let identifier = ParticipantId::deserialize(&id_bytes)
             .map_err(|e| CryptoError::FrostError(format!("Invalid identifier: {}", e)))?;
 
         // Reconstruct commitments from serialized form
-        let hiding = frost::round1::NonceCommitment::deserialize(&self.hiding)
+        let hiding_bytes: [u8; 32] = self.hiding.clone().try_into()
+            .map_err(|_| CryptoError::FrostError("Invalid hiding commitment length".to_string()))?;
+        let hiding = frost::round1::NonceCommitment::deserialize(hiding_bytes)
             .map_err(|e| CryptoError::FrostError(format!("Invalid hiding commitment: {}", e)))?;
-        let binding = frost::round1::NonceCommitment::deserialize(&self.binding)
+
+        let binding_bytes: [u8; 32] = self.binding.clone().try_into()
+            .map_err(|_| CryptoError::FrostError("Invalid binding commitment length".to_string()))?;
+        let binding = frost::round1::NonceCommitment::deserialize(binding_bytes)
             .map_err(|e| CryptoError::FrostError(format!("Invalid binding commitment: {}", e)))?;
 
         let commitments = frost::round1::SigningCommitments::new(hiding, binding);
@@ -118,10 +125,14 @@ pub struct SignatureShare {
 impl SignatureShare {
     /// Convert to FROST SignatureShare
     pub fn to_frost(&self) -> Result<(ParticipantId, frost::round2::SignatureShare), CryptoError> {
-        let identifier = ParticipantId::deserialize(&self.identifier)
+        let id_bytes: [u8; 32] = self.identifier.clone().try_into()
+            .map_err(|_| CryptoError::FrostError("Invalid identifier length".to_string()))?;
+        let identifier = ParticipantId::deserialize(&id_bytes)
             .map_err(|e| CryptoError::FrostError(format!("Invalid identifier: {}", e)))?;
 
-        let share = frost::round2::SignatureShare::deserialize(&self.share)
+        let share_bytes: [u8; 32] = self.share.clone().try_into()
+            .map_err(|_| CryptoError::FrostError("Invalid signature share length".to_string()))?;
+        let share = frost::round2::SignatureShare::deserialize(share_bytes)
             .map_err(|e| CryptoError::FrostError(format!("Invalid signature share: {}", e)))?;
 
         Ok((identifier, share))
@@ -159,7 +170,7 @@ impl FrostSignature {
     /// Convert to FROST Signature
     pub fn to_frost(&self) -> Result<frost::Signature, CryptoError> {
         let bytes = self.to_bytes();
-        frost::Signature::deserialize(&bytes)
+        frost::Signature::deserialize(bytes)
             .map_err(|e| CryptoError::FrostError(format!("Invalid signature: {}", e)))
     }
 }
@@ -413,15 +424,17 @@ pub fn generate_key_shares_trusted(
     .map_err(|e| CryptoError::FrostError(format!("Key generation failed: {}", e)))?;
 
     // Convert to our format
-    let key_shares: Vec<FrostKeyShare> = shares
+    let key_shares: Result<Vec<FrostKeyShare>, CryptoError> = shares
         .into_iter()
         .map(|(id, secret_share)| {
-            FrostKeyShare::new(id, secret_share, public_key_package.clone())
+            let key_package = frost::keys::KeyPackage::try_from(secret_share)
+                .map_err(|e| CryptoError::FrostError(format!("Failed to convert secret share: {}", e)))?;
+            Ok(FrostKeyShare::new(id, key_package, public_key_package.clone()))
         })
         .collect();
 
     Ok(DkgResult {
-        key_shares,
+        key_shares: key_shares?,
         public_key_package,
     })
 }
@@ -509,7 +522,7 @@ pub fn verify_signature(
 ) -> Result<bool, CryptoError> {
     let frost_sig = signature.to_frost()?;
 
-    let verifying_key = frost::VerifyingKey::deserialize(group_public_key)
+    let verifying_key = frost::VerifyingKey::deserialize(*group_public_key)
         .map_err(|e| CryptoError::FrostError(format!("Invalid public key: {}", e)))?;
 
     match verifying_key.verify(message, &frost_sig) {
@@ -524,10 +537,10 @@ pub fn verify_signature_bytes(
     signature: &[u8; 64],
     group_public_key: &[u8; 32],
 ) -> Result<bool, CryptoError> {
-    let frost_sig = frost::Signature::deserialize(signature)
+    let frost_sig = frost::Signature::deserialize(*signature)
         .map_err(|e| CryptoError::FrostError(format!("Invalid signature: {}", e)))?;
 
-    let verifying_key = frost::VerifyingKey::deserialize(group_public_key)
+    let verifying_key = frost::VerifyingKey::deserialize(*group_public_key)
         .map_err(|e| CryptoError::FrostError(format!("Invalid public key: {}", e)))?;
 
     match verifying_key.verify(message, &frost_sig) {

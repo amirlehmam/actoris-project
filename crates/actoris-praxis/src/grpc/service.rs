@@ -10,7 +10,7 @@ use std::time::Instant;
 use chrono::Utc;
 use tokio::sync::{mpsc, RwLock};
 use tokio_stream::wrappers::ReceiverStream;
-use tokio_stream::Stream;
+use tokio_stream::{Stream, StreamExt};
 use tonic::{Request, Response, Status};
 use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
@@ -783,6 +783,9 @@ impl PraxisService for PraxisGrpcService {
         // Build augmentation
         let augmentation = DomainAugmentation::from_retrieved(results);
 
+        // Compute context_string before moving fields
+        let context_string = augmentation.as_context_string();
+
         Ok(Response::new(proto::GetActionAugmentationResponse {
             augmentation: Some(proto::ActionAugmentation {
                 memories: augmentation
@@ -806,7 +809,7 @@ impl PraxisService for PraxisGrpcService {
                 }),
                 confidence: augmentation.confidence,
                 warning: augmentation.warning,
-                context_string: augmentation.as_context_string(),
+                context_string,
             }),
         }))
     }

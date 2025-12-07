@@ -13,6 +13,7 @@ use actoris_praxis::{
     config::PraxisConfig,
     domain::retrieval::RetrievalConfig,
     grpc::PraxisGrpcService,
+    MemoryStore,
     DEFAULT_RETRIEVAL_BREADTH, DEFAULT_SIMILARITY_THRESHOLD, MAX_MEMORIES_PER_AGENT,
     MEMORY_DECAY_HALF_LIFE_DAYS, PRAXIS_VERSION,
 };

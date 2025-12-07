@@ -10,5 +10,5 @@ pub mod frost;
 pub mod merkle;
 
 // Re-export commonly used items
-pub use frost::{FrostKeyShare, FrostSigner, PartialSignature};
+pub use frost::{FrostKeyShare, FrostSigner, SignatureShare};
 pub use merkle::{MerkleProof, MerkleTree};

@@ -4,7 +4,7 @@
 
 pub mod praxis {
     pub mod v1 {
-        use prost::{Enumeration, Message};
+        use prost::{Enumeration, Message, Oneof};
         use serde::{Deserialize, Serialize};
         use std::collections::HashMap;
 
@@ -123,7 +123,7 @@ pub mod praxis {
                 pub description: String,
             }
 
-            #[derive(Clone, PartialEq, Serialize, Deserialize)]
+            #[derive(Clone, PartialEq, Oneof, Serialize, Deserialize)]
             pub enum Outcome {
                 #[prost(message, tag = "1")]
                 Success(SuccessOutcome),
