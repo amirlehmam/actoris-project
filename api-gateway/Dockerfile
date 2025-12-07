@@ -1,37 +1,46 @@
-# Build stage
-FROM rust:1.75-alpine AS builder
+# Build stage - use Debian for easier OpenSSL compilation
+FROM rust:latest AS builder
 
 WORKDIR /app
 
 # Install build dependencies
-RUN apk add --no-cache musl-dev
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Create a dummy project to cache dependencies
-RUN mkdir -p src && echo "fn main() {}" > src/main.rs
+# Copy and build
 COPY Cargo.toml ./
-RUN cargo build --release && rm -rf src target/release/deps/api_gateway*
-
-# Copy actual source and build
 COPY src ./src
 RUN cargo build --release
 
 # Production stage
-FROM alpine:3.19
+FROM debian:bookworm-slim
 
 WORKDIR /app
 
 # Install runtime dependencies
-RUN apk add --no-cache ca-certificates
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy binary
-COPY --from=builder /app/target/release/api-gateway /usr/local/bin/
+COPY --from=builder /app/target/release/api-gateway /app/api-gateway
 
 # Add non-root user
-RUN addgroup -S actoris && adduser -S actoris -G actoris
+RUN useradd -r -s /bin/false actoris
 USER actoris
 
+# Railway uses PORT env var
 EXPOSE 8080
 
 ENV RUST_LOG=info
+ENV HOST=0.0.0.0
 
-CMD ["api-gateway"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-8080}/health || exit 1
+
+CMD ["/app/api-gateway"]
