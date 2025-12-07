@@ -4,7 +4,9 @@
       "Bash(cargo check:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push)"
+      "Bash(git push)",
+      "Bash(ls -la \"C:\\Users\\ASUS\\Desktop\\actoris\\good\\ui\"\" 2>/dev/null || dir \"C:UsersASUSDesktopactorisgoodui\"\")",
+      "Bash(npm install:*)"
     ],
     "deny": [],
     "ask": []
