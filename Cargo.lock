@@ -58,6 +58,7 @@ dependencies = [
  "actoris-common",
  "anyhow",
  "async-trait",
+ "blake3",
  "chrono",
  "dashmap",
  "prometheus",
@@ -138,6 +139,7 @@ dependencies = [
  "dashmap",
  "ed25519-dalek",
  "futures",
+ "hex",
  "http-body-util",
  "hyper 1.8.1",
  "hyper-util",
@@ -153,6 +155,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

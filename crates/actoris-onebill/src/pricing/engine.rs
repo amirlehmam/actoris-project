@@ -33,7 +33,7 @@ pub struct PricingInput {
     /// Base compute cost in HC
     pub compute_hc: String,
     /// Trust score (0-1000)
-    pub trust_score: u32,
+    pub trust_score: u16,
     /// Task complexity level (0-4)
     pub task_complexity: u32,
     /// Data sensitivity level (0-4)
@@ -228,11 +228,10 @@ impl PricingEngine {
     /// Convert task complexity to risk factor
     fn risk_factor_from_level(complexity: TaskComplexity) -> RiskFactor {
         match complexity {
-            TaskComplexity::Low => RiskFactor::Low,
-            TaskComplexity::Medium => RiskFactor::Medium,
-            TaskComplexity::High => RiskFactor::High,
-            TaskComplexity::Critical => RiskFactor::Critical,
-            TaskComplexity::Unspecified => RiskFactor::Low,
+            TaskComplexity::Low => RiskFactor::new("task_complexity", 0.0, "Low complexity task"),
+            TaskComplexity::Medium => RiskFactor::new("task_complexity", 0.10, "Medium complexity task (+10%)"),
+            TaskComplexity::High => RiskFactor::new("task_complexity", 0.25, "High complexity task (+25%)"),
+            TaskComplexity::Critical => RiskFactor::new("task_complexity", 0.50, "Critical complexity task (+50%)"),
         }
     }
 

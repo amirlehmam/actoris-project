@@ -422,7 +422,7 @@ fn get_process_stats() -> Result<(u64, u64), MeteringError> {
             0
         };
 
-        Ok((cpu_time_us, memory_bytes))
+        Ok((cpu_time_us, memory_bytes as u64))
     }
 }
 

@@ -187,7 +187,7 @@ impl ProxyMetrics {
         }
     }
 
-    pub fn register(&self, registry: &prometheus::Registry) -> Result<()> {
+    pub fn register(&self, registry: &prometheus::Registry) -> std::result::Result<(), prometheus::Error> {
         registry.register(Box::new(self.requests_total.clone()))?;
         registry.register(Box::new(self.requests_active.clone()))?;
         registry.register(Box::new(self.request_duration_seconds.clone()))?;
@@ -215,7 +215,7 @@ impl TrafficInterceptor {
             config,
             active_requests: Arc::new(DashMap::new()),
             request_counter: Arc::new(AtomicU64::new(0)),
-            metering: Arc::new(MeteringCollector::new()),
+            metering: Arc::new(MeteringCollector::new(Duration::from_millis(100))),
             verification_tx,
             metrics: Arc::new(ProxyMetrics::new()),
         }
@@ -358,8 +358,8 @@ impl TrafficInterceptorHandler {
         );
 
         // Start metering
-        let metering_handle = if self.config.enable_metering {
-            Some(self.metering.start_measurement(&request_id))
+        let metering_session = if self.config.enable_metering {
+            Some(self.metering.start_session())
         } else {
             None
         };
@@ -427,8 +427,8 @@ impl TrafficInterceptorHandler {
         let response = self.forward_to_upstream(parts, body_bytes).await;
 
         // Stop metering
-        let compute_metrics = if let Some(handle) = metering_handle {
-            self.metering.stop_measurement(handle)
+        let compute_metrics = if let Some(session) = metering_session {
+            session.complete()
         } else {
             ComputeMetrics::default()
         };

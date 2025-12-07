@@ -53,6 +53,10 @@ pub enum ActorisError {
     // Timeout error
     #[error("Operation timed out: {0}")]
     Timeout(String),
+
+    // Validation error
+    #[error("Validation error: {0}")]
+    Validation(String),
 }
 
 /// Identity-related errors

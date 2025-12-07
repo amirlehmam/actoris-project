@@ -39,6 +39,7 @@ rust_decimal = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 dashmap = { workspace = true }
+blake3 = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }
