@@ -2,14 +2,20 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { apiClient, Agent } from '@/lib/api'
+import { useDemoMode } from '@/lib/demo-context'
 import { formatNumber, formatCurrency, getFitnessColor } from '@/lib/utils'
 import { TrendingUp, Trophy, AlertTriangle, Skull, Zap, Target, Activity } from 'lucide-react'
 
 export default function DarwinianPage() {
-  const { data: agents } = useQuery({
+  const { isDemoMode, mockAgents } = useDemoMode()
+
+  const { data: liveAgents } = useQuery({
     queryKey: ['agents'],
     queryFn: apiClient.getAgents,
+    enabled: !isDemoMode,
   })
+
+  const agents = isDemoMode ? mockAgents : liveAgents
 
   // Sort by fitness
   const sortedAgents = [...(agents || [])].sort((a, b) => b.fitness.eta - a.fitness.eta)
@@ -25,7 +31,14 @@ export default function DarwinianPage() {
     <div className="space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Darwinian Engine</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-3xl font-bold text-gray-900">Darwinian Engine</h1>
+          {isDemoMode && (
+            <span className="px-2 py-1 text-xs font-medium bg-actoris-100 text-actoris-700 rounded-full">
+              Demo Mode
+            </span>
+          )}
+        </div>
         <p className="text-gray-500 mt-1">
           Automated resource allocation — The best agents survive, the rest get culled
         </p>
@@ -91,9 +104,14 @@ export default function DarwinianPage() {
       <div className="card">
         <div className="card-header flex justify-between items-center">
           <h2 className="font-semibold">Agent Fitness Leaderboard</h2>
-          <span className="text-sm text-gray-500">
-            Network Avg: <span className="font-mono font-semibold">{avgFitness.toFixed(2)}</span>
-          </span>
+          <div className="flex items-center gap-4">
+            {isDemoMode && (
+              <span className="text-xs text-actoris-600">Demo data</span>
+            )}
+            <span className="text-sm text-gray-500">
+              Network Avg: <span className="font-mono font-semibold">{avgFitness.toFixed(2)}</span>
+            </span>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">

@@ -46,6 +46,8 @@ struct AppState {
     loans: Arc<RwLock<HashMap<String, Loan>>>,
     policies: Arc<RwLock<HashMap<String, InsurancePolicy>>>,
     delegations: Arc<RwLock<HashMap<String, Delegation>>>,
+    // External ID mappings (external_id -> internal_id)
+    external_agent_map: Arc<RwLock<HashMap<String, String>>>,
     events_tx: broadcast::Sender<Event>,
 }
 
@@ -254,6 +256,59 @@ struct CreateDelegationRequest {
     task_description: String,
     escrow_amount: f64,
     deadline_days: u32,
+}
+
+// ============ EXTERNAL INTEGRATION (HUMAIN ONE / Grok) ============
+
+/// Ingest agent from external orchestration platform
+#[derive(Debug, Deserialize)]
+struct IngestAgentRequest {
+    external_id: String,           // ID from HUMAIN ONE / Grok
+    name: String,
+    #[serde(rename = "type")]
+    agent_type: Option<String>,    // "human" | "agent" | "organization"
+    source: String,                // "humain_one" | "grok" | "langchain" | etc
+    metadata: Option<serde_json::Value>,
+    initial_trust_score: Option<u16>,
+    initial_balance: Option<f64>,
+}
+
+/// Ingest action from external platform
+#[derive(Debug, Deserialize)]
+struct IngestActionRequest {
+    external_id: Option<String>,
+    producer_external_id: String,  // External ID of producer agent
+    consumer_external_id: String,  // External ID of consumer
+    action_type: String,
+    input_hash: Option<String>,    // Hash of input data for verification
+    output_hash: Option<String>,   // Hash of output for verification
+    compute_cost: Option<f64>,     // Actual compute cost in PFLOP-hours
+    source: String,
+    metadata: Option<serde_json::Value>,
+}
+
+/// Batch ingest for bulk imports
+#[derive(Debug, Deserialize)]
+struct BatchIngestRequest {
+    agents: Option<Vec<IngestAgentRequest>>,
+    actions: Option<Vec<IngestActionRequest>>,
+    source: String,
+}
+
+#[derive(Debug, Serialize)]
+struct IngestResponse {
+    success: bool,
+    id: String,
+    external_id: Option<String>,
+    message: String,
+}
+
+#[derive(Debug, Serialize)]
+struct BatchIngestResponse {
+    success: bool,
+    agents_created: usize,
+    actions_created: usize,
+    errors: Vec<String>,
 }
 
 // ============ HANDLERS ============
@@ -808,6 +863,275 @@ async fn complete_delegation(
     Ok(Json(delegation_clone))
 }
 
+// ============ EXTERNAL INTEGRATION HANDLERS ============
+
+/// Ingest agent from HUMAIN ONE, Grok, or other orchestration platforms
+async fn ingest_agent(
+    State(state): State<AppState>,
+    Json(req): Json<IngestAgentRequest>,
+) -> Json<IngestResponse> {
+    let id = format!("agent-{}", uuid::Uuid::new_v4().to_string()[..8].to_string());
+    let wallet_id = format!("wallet-{}", uuid::Uuid::new_v4().to_string()[..8].to_string());
+
+    let initial_score = req.initial_trust_score.unwrap_or(500);
+    let tau = initial_score as f64 / 1000.0;
+    let balance = req.initial_balance.unwrap_or(1000.0);
+
+    let agent = AgentV2 {
+        id: id.clone(),
+        name: req.name.clone(),
+        agent_type: req.agent_type.unwrap_or_else(|| "agent".to_string()),
+        trust_score: TrustScoreV2 {
+            score: initial_score,
+            tau,
+            tier: match initial_score {
+                0..=250 => 0,
+                251..=500 => 1,
+                501..=750 => 2,
+                _ => 3,
+            },
+            verifications: 0,
+            disputes: 0,
+            last_updated: Utc::now(),
+        },
+        wallet: HCWallet {
+            id: wallet_id,
+            balance,
+            reserved: 0.0,
+            expires_at: Utc::now() + chrono::Duration::days(30),
+        },
+        fitness: FitnessMetrics {
+            eta: tau,
+            revenue: 0.0,
+            cost: 0.0,
+            classification: "neutral".to_string(),
+            hc_allocation: 100.0,
+        },
+        status: "active".to_string(),
+        created_at: Utc::now(),
+    };
+
+    // Store agent and map external ID
+    state.agents.write().await.insert(id.clone(), agent.clone());
+    state.external_agent_map.write().await.insert(req.external_id.clone(), id.clone());
+
+    let _ = state.events_tx.send(Event {
+        event_type: "agent_ingested".to_string(),
+        payload: serde_json::json!({
+            "agent": agent,
+            "source": req.source,
+            "external_id": req.external_id
+        }),
+        timestamp: Utc::now(),
+    });
+
+    info!("Ingested agent {} from {} (external_id: {})", id, req.source, req.external_id);
+
+    Json(IngestResponse {
+        success: true,
+        id,
+        external_id: Some(req.external_id),
+        message: format!("Agent ingested from {}", req.source),
+    })
+}
+
+/// Ingest action from external platform
+async fn ingest_action(
+    State(state): State<AppState>,
+    Json(req): Json<IngestActionRequest>,
+) -> Result<Json<IngestResponse>, AppError> {
+    // Resolve external IDs to internal IDs
+    let external_map = state.external_agent_map.read().await;
+
+    let producer_id = external_map.get(&req.producer_external_id)
+        .cloned()
+        .ok_or(AppError(StatusCode::NOT_FOUND,
+            format!("Producer with external_id {} not found. Ingest agent first.", req.producer_external_id)))?;
+
+    let consumer_id = external_map.get(&req.consumer_external_id)
+        .cloned()
+        .ok_or(AppError(StatusCode::NOT_FOUND,
+            format!("Consumer with external_id {} not found. Ingest agent first.", req.consumer_external_id)))?;
+
+    drop(external_map);
+
+    let id = format!("act-{}", uuid::Uuid::new_v4().to_string()[..8].to_string());
+
+    // Calculate pricing
+    let base_compute = req.compute_cost.unwrap_or(0.08);
+    let (risk_premium, trust_discount) = {
+        let agents = state.agents.read().await;
+        let producer_trust = agents.get(&producer_id)
+            .map(|a| a.trust_score.tau)
+            .unwrap_or(0.5);
+        (
+            0.02 * (1.0 - producer_trust), // Lower trust = higher risk
+            0.015 * producer_trust,         // Higher trust = more discount
+        )
+    };
+    let final_price = base_compute + risk_premium - trust_discount;
+
+    let action = ActionV2 {
+        id: id.clone(),
+        producer_id: producer_id.clone(),
+        consumer_id: consumer_id.clone(),
+        action_type: req.action_type.clone(),
+        status: "pending".to_string(),
+        pricing: ActionPricing {
+            base_compute,
+            risk_premium,
+            trust_discount,
+            final_price,
+        },
+        verification: None,
+        created_at: Utc::now(),
+        verified_at: None,
+    };
+
+    state.actions.write().await.insert(id.clone(), action.clone());
+
+    let _ = state.events_tx.send(Event {
+        event_type: "action_ingested".to_string(),
+        payload: serde_json::json!({
+            "action": action,
+            "source": req.source,
+            "external_id": req.external_id
+        }),
+        timestamp: Utc::now(),
+    });
+
+    info!("Ingested action {} from {} (type: {})", id, req.source, req.action_type);
+
+    Ok(Json(IngestResponse {
+        success: true,
+        id,
+        external_id: req.external_id,
+        message: format!("Action ingested from {}", req.source),
+    }))
+}
+
+/// Batch ingest for bulk imports
+async fn batch_ingest(
+    State(state): State<AppState>,
+    Json(req): Json<BatchIngestRequest>,
+) -> Json<BatchIngestResponse> {
+    let mut agents_created = 0;
+    let mut actions_created = 0;
+    let mut errors: Vec<String> = Vec::new();
+
+    // Process agents first
+    if let Some(agents) = req.agents {
+        for agent_req in agents {
+            let id = format!("agent-{}", uuid::Uuid::new_v4().to_string()[..8].to_string());
+            let wallet_id = format!("wallet-{}", uuid::Uuid::new_v4().to_string()[..8].to_string());
+            let initial_score = agent_req.initial_trust_score.unwrap_or(500);
+            let tau = initial_score as f64 / 1000.0;
+
+            let agent = AgentV2 {
+                id: id.clone(),
+                name: agent_req.name,
+                agent_type: agent_req.agent_type.unwrap_or_else(|| "agent".to_string()),
+                trust_score: TrustScoreV2 {
+                    score: initial_score,
+                    tau,
+                    tier: match initial_score { 0..=250 => 0, 251..=500 => 1, 501..=750 => 2, _ => 3 },
+                    verifications: 0,
+                    disputes: 0,
+                    last_updated: Utc::now(),
+                },
+                wallet: HCWallet {
+                    id: wallet_id,
+                    balance: agent_req.initial_balance.unwrap_or(1000.0),
+                    reserved: 0.0,
+                    expires_at: Utc::now() + chrono::Duration::days(30),
+                },
+                fitness: FitnessMetrics {
+                    eta: tau,
+                    revenue: 0.0,
+                    cost: 0.0,
+                    classification: "neutral".to_string(),
+                    hc_allocation: 100.0,
+                },
+                status: "active".to_string(),
+                created_at: Utc::now(),
+            };
+
+            state.agents.write().await.insert(id.clone(), agent);
+            state.external_agent_map.write().await.insert(agent_req.external_id, id);
+            agents_created += 1;
+        }
+    }
+
+    // Process actions
+    if let Some(actions) = req.actions {
+        for action_req in actions {
+            let external_map = state.external_agent_map.read().await;
+
+            let producer_id = match external_map.get(&action_req.producer_external_id) {
+                Some(id) => id.clone(),
+                None => {
+                    errors.push(format!("Producer {} not found", action_req.producer_external_id));
+                    continue;
+                }
+            };
+
+            let consumer_id = match external_map.get(&action_req.consumer_external_id) {
+                Some(id) => id.clone(),
+                None => {
+                    errors.push(format!("Consumer {} not found", action_req.consumer_external_id));
+                    continue;
+                }
+            };
+
+            drop(external_map);
+
+            let id = format!("act-{}", uuid::Uuid::new_v4().to_string()[..8].to_string());
+            let base_compute = action_req.compute_cost.unwrap_or(0.08);
+
+            let action = ActionV2 {
+                id: id.clone(),
+                producer_id,
+                consumer_id,
+                action_type: action_req.action_type,
+                status: "pending".to_string(),
+                pricing: ActionPricing {
+                    base_compute,
+                    risk_premium: 0.02,
+                    trust_discount: 0.01,
+                    final_price: base_compute + 0.01,
+                },
+                verification: None,
+                created_at: Utc::now(),
+                verified_at: None,
+            };
+
+            state.actions.write().await.insert(id, action);
+            actions_created += 1;
+        }
+    }
+
+    info!("Batch ingest from {}: {} agents, {} actions, {} errors",
+          req.source, agents_created, actions_created, errors.len());
+
+    Json(BatchIngestResponse {
+        success: errors.is_empty(),
+        agents_created,
+        actions_created,
+        errors,
+    })
+}
+
+/// Get external ID mappings
+async fn get_external_mappings(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let mappings = state.external_agent_map.read().await;
+    Json(serde_json::json!({
+        "mappings": mappings.iter().map(|(ext, int)| {
+            serde_json::json!({"external_id": ext, "internal_id": int})
+        }).collect::<Vec<_>>(),
+        "count": mappings.len()
+    }))
+}
+
 // WebSocket handler
 async fn websocket_handler(
     State(state): State<AppState>,
@@ -982,6 +1306,7 @@ async fn main() -> anyhow::Result<()> {
         loans: Arc::new(RwLock::new(HashMap::new())),
         policies: Arc::new(RwLock::new(HashMap::new())),
         delegations: Arc::new(RwLock::new(HashMap::new())),
+        external_agent_map: Arc::new(RwLock::new(HashMap::new())),
         events_tx,
     };
 
@@ -1016,6 +1341,11 @@ async fn main() -> anyhow::Result<()> {
         .route("/delegations/:delegation_id/complete", post(complete_delegation))
         // WebSocket
         .route("/ws", get(websocket_handler))
+        // External Integration (HUMAIN ONE, Grok, etc.)
+        .route("/ingest/agent", post(ingest_agent))
+        .route("/ingest/action", post(ingest_action))
+        .route("/ingest/batch", post(batch_ingest))
+        .route("/ingest/mappings", get(get_external_mappings))
         // Middleware
         .layer(TraceLayer::new_for_http())
         .layer(CompressionLayer::new())
@@ -1027,6 +1357,7 @@ async fn main() -> anyhow::Result<()> {
     info!("ACTORIS API Gateway v2 starting on {}", addr);
     info!("Endpoints: /health, /stats, /agents, /actions, /darwinian/leaderboard");
     info!("Protocol DNA: /spawn, /loans, /policies, /delegations");
+    info!("External Integration: /ingest/agent, /ingest/action, /ingest/batch, /ingest/mappings");
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;

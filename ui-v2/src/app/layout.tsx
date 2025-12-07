@@ -3,6 +3,7 @@ import { Inter, JetBrains_Mono } from 'next/font/google'
 import Link from 'next/link'
 import './globals.css'
 import { Providers } from './providers'
+import { Header } from '@/components/Header'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 const jetbrains = JetBrains_Mono({ subsets: ['latin'], variable: '--font-mono' })
@@ -61,8 +62,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </div>
             </aside>
 
+            {/* Header */}
+            <Header />
+
             {/* Main Content */}
-            <main className="ml-64 flex-1 p-8">
+            <main className="ml-64 flex-1 p-8 pt-24">
               {children}
             </main>
           </div>

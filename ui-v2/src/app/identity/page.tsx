@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient, Agent } from '@/lib/api'
+import { useDemoMode } from '@/lib/demo-context'
 import { formatNumber, getTrustTier, getFitnessColor, truncateId } from '@/lib/utils'
 import { Users, Bot, Building2, User, Plus, Search, Shield, Wallet } from 'lucide-react'
 
@@ -11,11 +12,16 @@ export default function IdentityCloudPage() {
   const [search, setSearch] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const queryClient = useQueryClient()
+  const { isDemoMode, mockAgents } = useDemoMode()
 
-  const { data: agents, isLoading } = useQuery({
+  const { data: liveAgents, isLoading: liveLoading } = useQuery({
     queryKey: ['agents'],
     queryFn: apiClient.getAgents,
+    enabled: !isDemoMode,
   })
+
+  const agents = isDemoMode ? mockAgents : liveAgents
+  const isLoading = !isDemoMode && liveLoading
 
   const createMutation = useMutation({
     mutationFn: (data: { name: string; type: string }) => apiClient.createAgent(data),
@@ -43,7 +49,14 @@ export default function IdentityCloudPage() {
       {/* Header */}
       <div className="flex justify-between items-start">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">IdentityCloud</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-bold text-gray-900">IdentityCloud</h1>
+            {isDemoMode && (
+              <span className="px-2 py-1 text-xs font-medium bg-actoris-100 text-actoris-700 rounded-full">
+                Demo Mode
+              </span>
+            )}
+          </div>
           <p className="text-gray-500 mt-1">
             UnifiedID Registry — Every entity gets a DID, TrustScore (0-1000), and HC Wallet
           </p>
@@ -51,6 +64,8 @@ export default function IdentityCloudPage() {
         <button
           onClick={() => setShowCreate(true)}
           className="btn-primary flex items-center space-x-2"
+          disabled={isDemoMode}
+          title={isDemoMode ? 'Disable demo mode to create entities' : undefined}
         >
           <Plus className="w-4 h-4" />
           <span>Create Entity</span>
@@ -130,7 +145,7 @@ export default function IdentityCloudPage() {
       )}
 
       {/* Create Modal */}
-      {showCreate && (
+      {showCreate && !isDemoMode && (
         <CreateEntityModal
           onClose={() => setShowCreate(false)}
           onSubmit={(data) => createMutation.mutate(data)}

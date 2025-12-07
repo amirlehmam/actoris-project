@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { apiClient, Agent, Loan, InsurancePolicy, Delegation } from '@/lib/api'
+import { useDemoMode } from '@/lib/demo-context'
 import { formatNumber, formatCurrency } from '@/lib/utils'
 import {
   GitBranch,
@@ -16,31 +17,49 @@ import {
 } from 'lucide-react'
 
 export default function ProtocolDNAPage() {
-  const { data: agents } = useQuery({
+  const { isDemoMode, mockAgents, mockLoans, mockPolicies, mockDelegations } = useDemoMode()
+
+  const { data: liveAgents } = useQuery({
     queryKey: ['agents'],
     queryFn: apiClient.getAgents,
+    enabled: !isDemoMode,
   })
 
-  const { data: loans } = useQuery({
+  const { data: liveLoans } = useQuery({
     queryKey: ['loans'],
     queryFn: apiClient.getLoans,
+    enabled: !isDemoMode,
   })
 
-  const { data: policies } = useQuery({
+  const { data: livePolicies } = useQuery({
     queryKey: ['policies'],
     queryFn: apiClient.getPolicies,
+    enabled: !isDemoMode,
   })
 
-  const { data: delegations } = useQuery({
+  const { data: liveDelegations } = useQuery({
     queryKey: ['delegations'],
     queryFn: apiClient.getDelegations,
+    enabled: !isDemoMode,
   })
+
+  const agents = isDemoMode ? mockAgents : liveAgents
+  const loans = isDemoMode ? mockLoans : liveLoans
+  const policies = isDemoMode ? mockPolicies : livePolicies
+  const delegations = isDemoMode ? mockDelegations : liveDelegations
 
   return (
     <div className="space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Protocol DNA</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-3xl font-bold text-gray-900">Protocol DNA</h1>
+          {isDemoMode && (
+            <span className="px-2 py-1 text-xs font-medium bg-actoris-100 text-actoris-700 rounded-full">
+              Demo Mode
+            </span>
+          )}
+        </div>
         <p className="text-gray-500 mt-1">
           Four native primitives that create compounding network effects
         </p>

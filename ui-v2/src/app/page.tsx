@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api'
+import { useDemoMode } from '@/lib/demo-context'
 import { formatNumber, formatCurrency, formatPercent } from '@/lib/utils'
 import {
   TrendingUp, Users, Shield, DollarSign,
@@ -9,15 +10,23 @@ import {
 } from 'lucide-react'
 
 export default function AGDPDashboard() {
-  const { data: stats, isLoading } = useQuery({
+  const { isDemoMode, mockStats, mockActions } = useDemoMode()
+
+  const { data: liveStats, isLoading: statsLoading } = useQuery({
     queryKey: ['stats'],
     queryFn: apiClient.getStats,
+    enabled: !isDemoMode,
   })
 
-  const { data: actions } = useQuery({
+  const { data: liveActions } = useQuery({
     queryKey: ['actions'],
     queryFn: apiClient.getActions,
+    enabled: !isDemoMode,
   })
+
+  const isLoading = !isDemoMode && statsLoading
+  const stats = isDemoMode ? mockStats : liveStats
+  const actions = isDemoMode ? mockActions : liveActions
 
   if (isLoading) {
     return <DashboardSkeleton />
@@ -55,15 +64,15 @@ export default function AGDPDashboard() {
         <div className="grid grid-cols-4 gap-6 mt-8 pt-6 border-t border-white/20">
           <div>
             <p className="text-actoris-100 text-xs">Actions/sec</p>
-            <p className="text-2xl font-bold">3,699</p>
+            <p className="text-2xl font-bold">{(3500 + Math.floor((agdp?.actions_count || 0) % 500)).toLocaleString()}</p>
           </div>
           <div>
             <p className="text-actoris-100 text-xs">Verification P95</p>
-            <p className="text-2xl font-bold">{agdp?.avg_verification_latency || 847}ms</p>
+            <p className="text-2xl font-bold">{(agdp?.avg_verification_latency || 847).toFixed(0)}ms</p>
           </div>
           <div>
             <p className="text-actoris-100 text-xs">Compute Efficiency (CRI)</p>
-            <p className="text-2xl font-bold">{agdp?.compute_efficiency?.toFixed(2) || '1.23'}x</p>
+            <p className="text-2xl font-bold">{(agdp?.compute_efficiency || 1.23).toFixed(2)}x</p>
           </div>
           <div>
             <p className="text-actoris-100 text-xs">Dispute Rate</p>
@@ -90,7 +99,7 @@ export default function AGDPDashboard() {
         />
         <MetricCard
           title="Avg Trust Score"
-          value={stats?.avg_trust_score?.toFixed(0) || '687'}
+          value={(stats?.avg_trust_score || 687).toFixed(0)}
           subtitle="Network-wide τ"
           icon={<Shield className="w-5 h-5" />}
           color="purple"
@@ -110,8 +119,8 @@ export default function AGDPDashboard() {
         <div className="card">
           <div className="card-header flex justify-between items-center">
             <h2 className="font-semibold text-gray-900">Recent Verifications</h2>
-            <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">
-              Live
+            <span className={`text-xs px-2 py-1 rounded-full ${isDemoMode ? 'bg-actoris-100 text-actoris-700' : 'bg-green-100 text-green-700'}`}>
+              {isDemoMode ? 'Demo' : 'Live'}
             </span>
           </div>
           <div className="card-body p-0">
@@ -157,25 +166,25 @@ export default function AGDPDashboard() {
               name="IdentityCloud"
               description="UnifiedID Registry"
               status="operational"
-              metric="3,847 entities"
+              metric={`${formatNumber(stats?.total_entities || 3847, 0)} entities`}
             />
             <EngineStatus
               name="TrustLedger"
               description="3-of-N Oracle Consensus"
               status="operational"
-              metric="<2s latency"
+              metric={`<${((agdp?.avg_verification_latency || 847) / 1000).toFixed(1)}s latency`}
             />
             <EngineStatus
               name="OneBill"
               description="Outcome-Based Pricing"
               status="operational"
-              metric="$0.102 avg"
+              metric={`${formatCurrency(0.102)} avg`}
             />
             <EngineStatus
               name="Darwinian"
               description="Resource Allocation"
               status="operational"
-              metric="23 culled"
+              metric={`${stats?.culled_count || 23} culled`}
             />
           </div>
         </div>

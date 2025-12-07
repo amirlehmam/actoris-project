@@ -2,14 +2,20 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api'
+import { useDemoMode } from '@/lib/demo-context'
 import { formatCurrency, formatPercent } from '@/lib/utils'
 import { Receipt, Calculator, TrendingDown, DollarSign, Cpu, AlertTriangle, Shield } from 'lucide-react'
 
 export default function OneBillPage() {
-  const { data: actions } = useQuery({
+  const { isDemoMode, mockActions } = useDemoMode()
+
+  const { data: liveActions } = useQuery({
     queryKey: ['actions'],
     queryFn: apiClient.getActions,
+    enabled: !isDemoMode,
   })
+
+  const actions = isDemoMode ? mockActions : liveActions
 
   // Calculate pricing stats
   const pricingStats = actions?.reduce((acc, action) => {
@@ -28,7 +34,14 @@ export default function OneBillPage() {
     <div className="space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">OneBill</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-3xl font-bold text-gray-900">OneBill</h1>
+          {isDemoMode && (
+            <span className="px-2 py-1 text-xs font-medium bg-actoris-100 text-actoris-700 rounded-full">
+              Demo Mode
+            </span>
+          )}
+        </div>
         <p className="text-gray-500 mt-1">
           Programmable Billing — Outcome-based pricing per verified action
         </p>
@@ -119,11 +132,14 @@ export default function OneBillPage() {
         </div>
 
         <div className="card">
-          <div className="card-header">
+          <div className="card-header flex justify-between items-center">
             <h2 className="font-semibold flex items-center space-x-2">
               <Receipt className="w-5 h-5" />
               <span>Recent Billing</span>
             </h2>
+            {isDemoMode && (
+              <span className="text-xs text-actoris-600">Demo data</span>
+            )}
           </div>
           <div className="card-body p-0">
             <table className="w-full">

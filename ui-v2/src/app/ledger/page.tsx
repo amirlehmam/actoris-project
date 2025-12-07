@@ -2,15 +2,22 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { apiClient, Action } from '@/lib/api'
+import { useDemoMode } from '@/lib/demo-context'
 import { formatCurrency } from '@/lib/utils'
 import { Shield, CheckCircle, Clock, AlertTriangle, XCircle, Zap } from 'lucide-react'
 
 export default function TrustLedgerPage() {
-  const { data: actions, isLoading } = useQuery({
+  const { isDemoMode, mockActions } = useDemoMode()
+
+  const { data: liveActions, isLoading: liveLoading } = useQuery({
     queryKey: ['actions'],
     queryFn: apiClient.getActions,
-    refetchInterval: 5000,
+    refetchInterval: isDemoMode ? false : 5000,
+    enabled: !isDemoMode,
   })
+
+  const actions = isDemoMode ? mockActions : liveActions
+  const isLoading = !isDemoMode && liveLoading
 
   const verifiedActions = actions?.filter(a => a.verification) || []
   const stats = {
@@ -27,7 +34,14 @@ export default function TrustLedgerPage() {
     <div className="space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">TrustLedger</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-3xl font-bold text-gray-900">TrustLedger</h1>
+          {isDemoMode && (
+            <span className="px-2 py-1 text-xs font-medium bg-actoris-100 text-actoris-700 rounded-full">
+              Demo Mode
+            </span>
+          )}
+        </div>
         <p className="text-gray-500 mt-1">
           3-of-N Oracle Consensus — Immutable verification records with FROST threshold signatures
         </p>
@@ -97,9 +111,9 @@ export default function TrustLedgerPage() {
       <div className="card">
         <div className="card-header flex justify-between items-center">
           <h2 className="font-semibold">Verification Pipeline</h2>
-          <span className="flex items-center space-x-2 text-sm text-green-600">
-            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-            <span>Live Feed</span>
+          <span className={`flex items-center space-x-2 text-sm ${isDemoMode ? 'text-actoris-600' : 'text-green-600'}`}>
+            <span className={`w-2 h-2 rounded-full animate-pulse ${isDemoMode ? 'bg-actoris-500' : 'bg-green-500'}`} />
+            <span>{isDemoMode ? 'Demo Feed' : 'Live Feed'}</span>
           </span>
         </div>
         <div className="overflow-x-auto">
