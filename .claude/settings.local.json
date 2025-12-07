@@ -6,7 +6,10 @@
       "Bash(git commit:*)",
       "Bash(git push)",
       "Bash(ls -la \"C:\\Users\\ASUS\\Desktop\\actoris\\good\\ui\"\" 2>/dev/null || dir \"C:UsersASUSDesktopactorisgoodui\"\")",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(git reset:*)",
+      "Bash(git check-ignore:*)",
+      "Bash(npm run build:*)"
     ],
     "deny": [],
     "ask": []
