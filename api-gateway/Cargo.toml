@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 description = "REST API Gateway for ACTORIS"
 
+[workspace]
+
 [[bin]]
 name = "api-gateway"
 path = "src/main.rs"
@@ -30,7 +32,7 @@ redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
 
 # Crypto
 blake3 = "1.5"
-uuid = { version = "1.6", features = ["v7", "serde"] }
+uuid = { version = "1.6", features = ["v4", "v7", "serde"] }
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }
 rand = "0.8"
 
@@ -46,3 +48,4 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # Config
 dotenvy = "0.15"
+hex = "0.4"

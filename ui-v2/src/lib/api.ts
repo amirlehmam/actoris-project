@@ -112,6 +112,46 @@ export interface Health {
   services: Record<string, boolean>
 }
 
+// ============= PROTOCOL DNA TYPES =============
+
+export interface Loan {
+  id: string
+  lender_id: string
+  borrower_id: string
+  principal: number       // HC amount
+  interest_rate: number   // APR (based on trust)
+  term_days: number
+  status: 'active' | 'repaid' | 'defaulted'
+  created_at: string
+  due_at: string
+  repaid_amount: number
+}
+
+export interface InsurancePolicy {
+  id: string
+  insurer_id: string
+  insured_id: string
+  coverage: number        // HC coverage amount
+  premium: number         // Premium paid
+  premium_rate: number    // Rate based on trust
+  action_type: string     // Type of action insured
+  status: 'active' | 'claimed' | 'expired'
+  created_at: string
+  expires_at: string
+}
+
+export interface Delegation {
+  id: string
+  client_id: string
+  agent_id: string
+  task_description: string
+  escrow_amount: number   // HC locked in escrow
+  status: 'pending' | 'active' | 'completed' | 'disputed' | 'cancelled'
+  created_at: string
+  deadline: string
+  completed_at?: string
+}
+
 // ============= API CLIENT =============
 
 export const apiClient = {
@@ -141,6 +181,27 @@ export const apiClient = {
     api.post<Action>(`/actions/${id}/verify`, { output_data }).then(r => r.data),
 
   getLeaderboard: () => api.get<Agent[]>('/darwinian/leaderboard').then(r => r.data).catch(() => mockAgents()),
+
+  // Protocol DNA - Spawn
+  spawnAgent: (data: { parent_id: string; name: string }) =>
+    api.post<Agent>('/spawn', data).then(r => r.data),
+
+  // Protocol DNA - Lend
+  getLoans: () => api.get<Loan[]>('/loans').then(r => r.data).catch(() => []),
+  createLoan: (data: { lender_id: string; borrower_id: string; principal: number; term_days: number }) =>
+    api.post<Loan>('/loans', data).then(r => r.data),
+
+  // Protocol DNA - Insure
+  getPolicies: () => api.get<InsurancePolicy[]>('/policies').then(r => r.data).catch(() => []),
+  createPolicy: (data: { insurer_id: string; insured_id: string; coverage: number; action_type: string; duration_days: number }) =>
+    api.post<InsurancePolicy>('/policies', data).then(r => r.data),
+
+  // Protocol DNA - Delegate
+  getDelegations: () => api.get<Delegation[]>('/delegations').then(r => r.data).catch(() => []),
+  createDelegation: (data: { client_id: string; agent_id: string; task_description: string; escrow_amount: number; deadline_days: number }) =>
+    api.post<Delegation>('/delegations', data).then(r => r.data),
+  completeDelegation: (id: string) =>
+    api.post<Delegation>(`/delegations/${id}/complete`).then(r => r.data),
 }
 
 // ============= MOCK DATA FOR DEMO =============

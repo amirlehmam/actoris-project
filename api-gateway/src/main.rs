@@ -8,8 +8,8 @@
 
 use axum::{
     extract::{Path, State, WebSocketUpgrade, ws::{Message, WebSocket}},
-    http::Method,
-    response::{IntoResponse, Json},
+    http::{Method, StatusCode},
+    response::{IntoResponse, Json, Response},
     routing::{get, post},
     Router,
 };
@@ -26,12 +26,26 @@ use tracing::info;
 use chrono::{DateTime, Utc};
 use rand::Rng;
 
+// ============ ERROR TYPE ============
+
+struct AppError(StatusCode, String);
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        (self.0, Json(serde_json::json!({"error": self.1}))).into_response()
+    }
+}
+
 // ============ STATE ============
 
 #[derive(Clone)]
 struct AppState {
     agents: Arc<RwLock<HashMap<String, AgentV2>>>,
     actions: Arc<RwLock<HashMap<String, ActionV2>>>,
+    // Protocol DNA primitives
+    loans: Arc<RwLock<HashMap<String, Loan>>>,
+    policies: Arc<RwLock<HashMap<String, InsurancePolicy>>>,
+    delegations: Arc<RwLock<HashMap<String, Delegation>>>,
     events_tx: broadcast::Sender<Event>,
 }
 
@@ -144,6 +158,49 @@ struct Event {
     timestamp: DateTime<Utc>,
 }
 
+// ============ PROTOCOL DNA MODELS ============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Loan {
+    id: String,
+    lender_id: String,
+    borrower_id: String,
+    principal: f64,        // HC amount
+    interest_rate: f64,    // APR (based on trust)
+    term_days: u32,
+    status: String,        // "active" | "repaid" | "defaulted"
+    created_at: DateTime<Utc>,
+    due_at: DateTime<Utc>,
+    repaid_amount: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct InsurancePolicy {
+    id: String,
+    insurer_id: String,
+    insured_id: String,
+    coverage: f64,         // HC coverage amount
+    premium: f64,          // Premium paid
+    premium_rate: f64,     // Rate based on trust
+    action_type: String,   // Type of action insured
+    status: String,        // "active" | "claimed" | "expired"
+    created_at: DateTime<Utc>,
+    expires_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Delegation {
+    id: String,
+    client_id: String,
+    agent_id: String,
+    task_description: String,
+    escrow_amount: f64,    // HC locked in escrow
+    status: String,        // "pending" | "active" | "completed" | "disputed" | "cancelled"
+    created_at: DateTime<Utc>,
+    deadline: DateTime<Utc>,
+    completed_at: Option<DateTime<Utc>>,
+}
+
 // ============ REQUEST TYPES ============
 
 #[derive(Debug, Deserialize)]
@@ -164,6 +221,39 @@ struct SubmitActionRequest {
 #[derive(Debug, Deserialize)]
 struct VerifyActionRequest {
     output_data: String,
+}
+
+// Protocol DNA Request Types
+#[derive(Debug, Deserialize)]
+struct SpawnAgentRequest {
+    parent_id: String,
+    name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateLoanRequest {
+    lender_id: String,
+    borrower_id: String,
+    principal: f64,
+    term_days: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateInsuranceRequest {
+    insurer_id: String,
+    insured_id: String,
+    coverage: f64,
+    action_type: String,
+    duration_days: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateDelegationRequest {
+    client_id: String,
+    agent_id: String,
+    task_description: String,
+    escrow_amount: f64,
+    deadline_days: u32,
 }
 
 // ============ HANDLERS ============
@@ -241,10 +331,22 @@ async fn create_agent(
     State(state): State<AppState>,
     Json(req): Json<CreateAgentRequest>,
 ) -> Json<AgentV2> {
-    let mut rng = rand::thread_rng();
+    // Generate all random values before any await points to avoid Send issues
     let id = format!("agent-{}", uuid::Uuid::new_v4().to_string()[..8].to_string());
+    let wallet_id = format!("wallet-{}", uuid::Uuid::new_v4().to_string()[..8].to_string());
 
-    let initial_score: u16 = rng.gen_range(400..700);
+    let (initial_score, balance, revenue, cost, hc_allocation) = {
+        let mut rng = rand::thread_rng();
+        (
+            rng.gen_range(400..700u16),
+            rng.gen_range(100.0..5000.0f64),
+            rng.gen_range(1000.0..20000.0f64),
+            rng.gen_range(800.0..15000.0f64),
+            rng.gen_range(100.0..1000.0f64),
+        )
+    };
+
+    let initial_score: u16 = initial_score;
     let tau = initial_score as f64 / 1000.0;
 
     let agent = AgentV2 {
@@ -265,19 +367,19 @@ async fn create_agent(
             last_updated: Utc::now(),
         },
         wallet: HCWallet {
-            id: format!("wallet-{}", uuid::Uuid::new_v4().to_string()[..8].to_string()),
-            balance: rng.gen_range(100.0..5000.0),
+            id: wallet_id,
+            balance,
             reserved: 0.0,
             expires_at: Utc::now() + chrono::Duration::days(30),
         },
         fitness: FitnessMetrics {
-            eta: tau * rng.gen_range(0.8..1.5),
-            revenue: rng.gen_range(1000.0..20000.0),
-            cost: rng.gen_range(800.0..15000.0),
+            eta: tau * (revenue / cost),
+            revenue,
+            cost,
             classification: if tau > 0.7 { "champion".to_string() }
                            else if tau > 0.5 { "neutral".to_string() }
                            else { "underperformer".to_string() },
-            hc_allocation: rng.gen_range(100.0..1000.0),
+            hc_allocation,
         },
         status: "active".to_string(),
         created_at: Utc::now(),
@@ -298,12 +400,12 @@ async fn create_agent(
 async fn get_agent(
     State(state): State<AppState>,
     Path(agent_id): Path<String>,
-) -> Result<Json<AgentV2>, (axum::http::StatusCode, String)> {
+) -> Result<Json<AgentV2>, AppError> {
     let agents = state.agents.read().await;
     agents.get(&agent_id)
         .cloned()
         .map(Json)
-        .ok_or((axum::http::StatusCode::NOT_FOUND, "Agent not found".to_string()))
+        .ok_or(AppError(StatusCode::NOT_FOUND, "Agent not found".to_string()))
 }
 
 async fn list_actions(State(state): State<AppState>) -> Json<Vec<ActionV2>> {
@@ -317,13 +419,17 @@ async fn submit_action(
     State(state): State<AppState>,
     Json(req): Json<SubmitActionRequest>,
 ) -> Json<ActionV2> {
-    let mut rng = rand::thread_rng();
     let id = format!("act-{}", uuid::Uuid::new_v4().to_string()[..8].to_string());
 
     // Calculate OneBill pricing: Price = Compute + Risk - Trust
-    let base_compute = rng.gen_range(0.05..0.15);
-    let risk_premium = rng.gen_range(0.01..0.05);
-    let trust_discount = rng.gen_range(0.005..0.03);
+    let (base_compute, risk_premium, trust_discount) = {
+        let mut rng = rand::thread_rng();
+        (
+            rng.gen_range(0.05..0.15f64),
+            rng.gen_range(0.01..0.05f64),
+            rng.gen_range(0.005..0.03f64),
+        )
+    };
     let final_price = base_compute + risk_premium - trust_discount;
 
     let action = ActionV2 {
@@ -358,21 +464,21 @@ async fn submit_action(
 async fn verify_action(
     State(state): State<AppState>,
     Path(action_id): Path<String>,
-    Json(_req): Json<VerifyActionRequest>,
-) -> Result<Json<ActionV2>, (axum::http::StatusCode, String)> {
-    let mut rng = rand::thread_rng();
-    let mut actions = state.actions.write().await;
-
-    let action = actions.get_mut(&action_id)
-        .ok_or((axum::http::StatusCode::NOT_FOUND, "Action not found".to_string()))?;
-
-    // Simulate 3-of-5 oracle consensus
+) -> Result<Json<ActionV2>, AppError> {
+    // Generate all random values before any await points
     let oracle_names = ["Oracle-Alpha", "Oracle-Beta", "Oracle-Gamma", "Oracle-Delta", "Oracle-Epsilon"];
+    let (oracle_votes_data, latency_ms) = {
+        let mut rng = rand::thread_rng();
+        let votes: Vec<bool> = oracle_names.iter().map(|_| rng.gen_bool(0.95)).collect();
+        let latency = rng.gen_range(600.0..1400.0f64);
+        (votes, latency)
+    };
+
     let oracle_votes: Vec<OracleVoteV2> = oracle_names.iter().enumerate().map(|(i, name)| {
         OracleVoteV2 {
             oracle_id: format!("oracle-{}", i),
             oracle_name: name.to_string(),
-            vote: rng.gen_bool(0.95), // 95% chance of yes
+            vote: oracle_votes_data[i],
             timestamp: Utc::now(),
         }
     }).collect();
@@ -380,7 +486,10 @@ async fn verify_action(
     let yes_votes = oracle_votes.iter().filter(|v| v.vote).count();
     let quorum_reached = yes_votes >= 3;
 
-    let latency_ms = rng.gen_range(600.0..1400.0);
+    let mut actions = state.actions.write().await;
+
+    let action = actions.get_mut(&action_id)
+        .ok_or(AppError(StatusCode::NOT_FOUND, "Action not found".to_string()))?;
 
     action.verification = Some(VerificationProofV2 {
         oracle_votes,
@@ -429,6 +538,274 @@ async fn get_leaderboard(State(state): State<AppState>) -> Json<Vec<AgentV2>> {
     let mut sorted: Vec<_> = agents.values().cloned().collect();
     sorted.sort_by(|a, b| b.fitness.eta.partial_cmp(&a.fitness.eta).unwrap_or(std::cmp::Ordering::Equal));
     Json(sorted)
+}
+
+// ============ PROTOCOL DNA HANDLERS ============
+
+// SPAWN: Create child agent with 30% trust inheritance
+async fn spawn_agent(
+    State(state): State<AppState>,
+    Json(req): Json<SpawnAgentRequest>,
+) -> Result<Json<AgentV2>, AppError> {
+    // Generate random values before await
+    let id = format!("agent-{}", uuid::Uuid::new_v4().to_string()[..8].to_string());
+    let wallet_id = format!("wallet-{}", uuid::Uuid::new_v4().to_string()[..8].to_string());
+    let hc_allocation = {
+        let mut rng = rand::thread_rng();
+        rng.gen_range(50.0..200.0f64)
+    };
+
+    let agents = state.agents.read().await;
+    let parent = agents.get(&req.parent_id)
+        .ok_or(AppError(StatusCode::NOT_FOUND, "Parent agent not found".to_string()))?;
+
+    // 30% trust inheritance cap
+    let inherited_score = (parent.trust_score.score as f64 * 0.30) as u16;
+    let tau = inherited_score as f64 / 1000.0;
+
+    let child = AgentV2 {
+        id: id.clone(),
+        name: req.name.clone(),
+        agent_type: "agent".to_string(),
+        trust_score: TrustScoreV2 {
+            score: inherited_score,
+            tau,
+            tier: match inherited_score {
+                0..=250 => 0,
+                251..=500 => 1,
+                501..=750 => 2,
+                _ => 3,
+            },
+            verifications: 0,
+            disputes: 0,
+            last_updated: Utc::now(),
+        },
+        wallet: HCWallet {
+            id: wallet_id,
+            balance: 100.0, // Starting balance
+            reserved: 0.0,
+            expires_at: Utc::now() + chrono::Duration::days(30),
+        },
+        fitness: FitnessMetrics {
+            eta: tau * 0.5, // Start with low fitness
+            revenue: 0.0,
+            cost: 0.0,
+            classification: "neutral".to_string(),
+            hc_allocation,
+        },
+        status: "active".to_string(),
+        created_at: Utc::now(),
+    };
+
+    drop(agents);
+    state.agents.write().await.insert(id.clone(), child.clone());
+
+    let _ = state.events_tx.send(Event {
+        event_type: "agent_spawned".to_string(),
+        payload: serde_json::json!({
+            "parent_id": req.parent_id,
+            "child": child
+        }),
+        timestamp: Utc::now(),
+    });
+
+    info!("Spawned agent {} from parent {} (inherited trust: {})", id, req.parent_id, inherited_score);
+    Ok(Json(child))
+}
+
+// LEND: Create risk-priced loan based on TrustScore
+async fn create_loan(
+    State(state): State<AppState>,
+    Json(req): Json<CreateLoanRequest>,
+) -> Result<Json<Loan>, AppError> {
+    let agents = state.agents.read().await;
+
+    let borrower = agents.get(&req.borrower_id)
+        .ok_or(AppError(StatusCode::NOT_FOUND, "Borrower not found".to_string()))?;
+
+    let _lender = agents.get(&req.lender_id)
+        .ok_or(AppError(StatusCode::NOT_FOUND, "Lender not found".to_string()))?;
+
+    // Calculate interest rate based on borrower's trust score
+    // Higher trust = lower rate. Base rate 3.2% APR
+    let base_rate = 0.032;
+    let tau = borrower.trust_score.tau;
+    let interest_rate = base_rate * (2.0 - tau); // Range: 3.2% to 6.4%
+
+    let id = format!("loan-{}", uuid::Uuid::new_v4().to_string()[..8].to_string());
+
+    let loan = Loan {
+        id: id.clone(),
+        lender_id: req.lender_id.clone(),
+        borrower_id: req.borrower_id.clone(),
+        principal: req.principal,
+        interest_rate,
+        term_days: req.term_days,
+        status: "active".to_string(),
+        created_at: Utc::now(),
+        due_at: Utc::now() + chrono::Duration::days(req.term_days as i64),
+        repaid_amount: 0.0,
+    };
+
+    drop(agents);
+    state.loans.write().await.insert(id.clone(), loan.clone());
+
+    let _ = state.events_tx.send(Event {
+        event_type: "loan_created".to_string(),
+        payload: serde_json::to_value(&loan).unwrap(),
+        timestamp: Utc::now(),
+    });
+
+    info!("Created loan {} (rate: {:.2}%)", id, interest_rate * 100.0);
+    Ok(Json(loan))
+}
+
+async fn list_loans(State(state): State<AppState>) -> Json<Vec<Loan>> {
+    let loans = state.loans.read().await;
+    Json(loans.values().cloned().collect())
+}
+
+// INSURE: Create insurance policy with trust-based premium
+async fn create_insurance(
+    State(state): State<AppState>,
+    Json(req): Json<CreateInsuranceRequest>,
+) -> Result<Json<InsurancePolicy>, AppError> {
+    let agents = state.agents.read().await;
+
+    let insured = agents.get(&req.insured_id)
+        .ok_or(AppError(StatusCode::NOT_FOUND, "Insured entity not found".to_string()))?;
+
+    let _insurer = agents.get(&req.insurer_id)
+        .ok_or(AppError(StatusCode::NOT_FOUND, "Insurer not found".to_string()))?;
+
+    // Calculate premium based on trust score
+    // Lower trust = higher premium. Base rate 8-12%
+    let tau = insured.trust_score.tau;
+    let risk_factor = 1.0 + (1.0 - tau); // 1.0 to 2.0
+    let base_failure_prob = 0.05; // 5% base failure probability
+    let premium_rate = base_failure_prob * risk_factor; // 5% to 10%
+    let premium = req.coverage * premium_rate;
+
+    let id = format!("policy-{}", uuid::Uuid::new_v4().to_string()[..8].to_string());
+
+    let policy = InsurancePolicy {
+        id: id.clone(),
+        insurer_id: req.insurer_id.clone(),
+        insured_id: req.insured_id.clone(),
+        coverage: req.coverage,
+        premium,
+        premium_rate,
+        action_type: req.action_type,
+        status: "active".to_string(),
+        created_at: Utc::now(),
+        expires_at: Utc::now() + chrono::Duration::days(req.duration_days as i64),
+    };
+
+    drop(agents);
+    state.policies.write().await.insert(id.clone(), policy.clone());
+
+    let _ = state.events_tx.send(Event {
+        event_type: "policy_created".to_string(),
+        payload: serde_json::to_value(&policy).unwrap(),
+        timestamp: Utc::now(),
+    });
+
+    info!("Created insurance policy {} (premium: {:.2} HC)", id, premium);
+    Ok(Json(policy))
+}
+
+async fn list_policies(State(state): State<AppState>) -> Json<Vec<InsurancePolicy>> {
+    let policies = state.policies.read().await;
+    Json(policies.values().cloned().collect())
+}
+
+// DELEGATE: Create task delegation with escrow
+async fn create_delegation(
+    State(state): State<AppState>,
+    Json(req): Json<CreateDelegationRequest>,
+) -> Result<Json<Delegation>, AppError> {
+    let mut agents = state.agents.write().await;
+
+    let client = agents.get_mut(&req.client_id)
+        .ok_or(AppError(StatusCode::NOT_FOUND, "Client not found".to_string()))?;
+
+    // Check if client has enough balance
+    if client.wallet.balance < req.escrow_amount {
+        return Err(AppError(StatusCode::BAD_REQUEST, "Insufficient balance".to_string()));
+    }
+
+    // Lock escrow
+    client.wallet.balance -= req.escrow_amount;
+    client.wallet.reserved += req.escrow_amount;
+
+    let id = format!("delegation-{}", uuid::Uuid::new_v4().to_string()[..8].to_string());
+
+    let delegation = Delegation {
+        id: id.clone(),
+        client_id: req.client_id.clone(),
+        agent_id: req.agent_id.clone(),
+        task_description: req.task_description,
+        escrow_amount: req.escrow_amount,
+        status: "pending".to_string(),
+        created_at: Utc::now(),
+        deadline: Utc::now() + chrono::Duration::days(req.deadline_days as i64),
+        completed_at: None,
+    };
+
+    drop(agents);
+    state.delegations.write().await.insert(id.clone(), delegation.clone());
+
+    let _ = state.events_tx.send(Event {
+        event_type: "delegation_created".to_string(),
+        payload: serde_json::to_value(&delegation).unwrap(),
+        timestamp: Utc::now(),
+    });
+
+    info!("Created delegation {} (escrow: {} HC)", id, req.escrow_amount);
+    Ok(Json(delegation))
+}
+
+async fn list_delegations(State(state): State<AppState>) -> Json<Vec<Delegation>> {
+    let delegations = state.delegations.read().await;
+    Json(delegations.values().cloned().collect())
+}
+
+async fn complete_delegation(
+    State(state): State<AppState>,
+    Path(delegation_id): Path<String>,
+) -> Result<Json<Delegation>, AppError> {
+    let mut delegations = state.delegations.write().await;
+    let mut agents = state.agents.write().await;
+
+    let delegation = delegations.get_mut(&delegation_id)
+        .ok_or(AppError(StatusCode::NOT_FOUND, "Delegation not found".to_string()))?;
+
+    if delegation.status != "pending" && delegation.status != "active" {
+        return Err(AppError(StatusCode::BAD_REQUEST, "Delegation already completed".to_string()));
+    }
+
+    // Release escrow to agent
+    if let Some(client) = agents.get_mut(&delegation.client_id) {
+        client.wallet.reserved -= delegation.escrow_amount;
+    }
+    if let Some(agent) = agents.get_mut(&delegation.agent_id) {
+        agent.wallet.balance += delegation.escrow_amount;
+        agent.fitness.revenue += delegation.escrow_amount;
+    }
+
+    delegation.status = "completed".to_string();
+    delegation.completed_at = Some(Utc::now());
+
+    let delegation_clone = delegation.clone();
+
+    let _ = state.events_tx.send(Event {
+        event_type: "delegation_completed".to_string(),
+        payload: serde_json::to_value(&delegation_clone).unwrap(),
+        timestamp: Utc::now(),
+    });
+
+    info!("Completed delegation {}", delegation_id);
+    Ok(Json(delegation_clone))
 }
 
 // WebSocket handler
@@ -602,6 +979,9 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState {
         agents: Arc::new(RwLock::new(HashMap::new())),
         actions: Arc::new(RwLock::new(HashMap::new())),
+        loans: Arc::new(RwLock::new(HashMap::new())),
+        policies: Arc::new(RwLock::new(HashMap::new())),
+        delegations: Arc::new(RwLock::new(HashMap::new())),
         events_tx,
     };
 
@@ -625,6 +1005,15 @@ async fn main() -> anyhow::Result<()> {
         .route("/actions/:action_id/verify", post(verify_action))
         // Darwinian
         .route("/darwinian/leaderboard", get(get_leaderboard))
+        // Protocol DNA - Spawn
+        .route("/spawn", post(spawn_agent))
+        // Protocol DNA - Lend
+        .route("/loans", get(list_loans).post(create_loan))
+        // Protocol DNA - Insure
+        .route("/policies", get(list_policies).post(create_insurance))
+        // Protocol DNA - Delegate
+        .route("/delegations", get(list_delegations).post(create_delegation))
+        .route("/delegations/:delegation_id/complete", post(complete_delegation))
         // WebSocket
         .route("/ws", get(websocket_handler))
         // Middleware
@@ -637,6 +1026,7 @@ async fn main() -> anyhow::Result<()> {
     let addr = format!("0.0.0.0:{}", port);
     info!("ACTORIS API Gateway v2 starting on {}", addr);
     info!("Endpoints: /health, /stats, /agents, /actions, /darwinian/leaderboard");
+    info!("Protocol DNA: /spawn, /loans, /policies, /delegations");
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;
